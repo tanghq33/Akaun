@@ -1,0 +1,92 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+
+<!-- Glass gradients -->
+<linearGradient id="glassCalc" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85"/>
+  <stop offset="100%" stop-color="#e7edf3" stop-opacity="0.65"/>
+</linearGradient>
+
+<linearGradient id="screenGrad" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#6fe0d3" stop-opacity="0.9"/>
+  <stop offset="100%" stop-color="#2e9aa1" stop-opacity="0.7"/>
+</linearGradient>
+
+<linearGradient id="blueBar" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#a9d0ff" stop-opacity="0.9"/>
+  <stop offset="100%" stop-color="#5c86d6" stop-opacity="0.75"/>
+</linearGradient>
+
+<linearGradient id="greenBar" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#dcff8a" stop-opacity="0.9"/>
+  <stop offset="100%" stop-color="#8ecb4a" stop-opacity="0.75"/>
+</linearGradient>
+
+<radialGradient id="coinGrad">
+  <stop offset="0%" stop-color="#ffe38a" stop-opacity="0.95"/>
+  <stop offset="100%" stop-color="#e2a31b" stop-opacity="0.85"/>
+</radialGradient>
+
+<!-- soft macOS shadow -->
+<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+  <feDropShadow dx="0" dy="18" stdDeviation="20" flood-opacity="0.22"/>
+</filter>
+
+</defs>
+
+<!-- chart bars (back layer) -->
+<rect x="610" y="360" width="120" height="360" rx="26"
+      fill="url(#blueBar)" filter="url(#shadow)"/>
+
+<rect x="510" y="420" width="120" height="300" rx="26"
+      fill="url(#greenBar)" filter="url(#shadow)"/>
+
+<!-- calculator -->
+<g transform="rotate(-12 420 560)" filter="url(#shadow)">
+
+<rect x="300" y="420" width="300" height="340" rx="48"
+      fill="url(#glassCalc)"/>
+
+<!-- screen -->
+<rect x="340" y="455" width="220" height="70" rx="16"
+      fill="url(#screenGrad)"/>
+
+<!-- buttons -->
+<g opacity="0.85">
+<rect x="340" y="540" width="54" height="54" rx="12" fill="#95a1ad"/>
+<rect x="410" y="540" width="54" height="54" rx="12" fill="#95a1ad"/>
+<rect x="480" y="540" width="54" height="54" rx="12" fill="#95a1ad"/>
+
+<rect x="340" y="610" width="54" height="54" rx="12" fill="#57c5a7"/>
+<rect x="410" y="610" width="54" height="54" rx="12" fill="#b0b7c1"/>
+<rect x="480" y="610" width="54" height="124" rx="14" fill="#e45a52"/>
+
+<rect x="340" y="680" width="54" height="54" rx="12" fill="#3ea6b2"/>
+<rect x="410" y="680" width="54" height="54" rx="12" fill="#f4c049"/>
+</g>
+
+</g>
+
+<!-- coin front layer -->
+<g filter="url(#shadow)">
+
+<circle cx="660" cy="660" r="130"
+        fill="url(#coinGrad)"
+        stroke="#d59a1c"
+        stroke-width="10"
+        opacity="0.92"/>
+
+<text x="660" y="705"
+      font-size="150"
+      font-weight="700"
+      text-anchor="middle"
+      fill="#cc8a00"
+      opacity="0.9"
+      font-family="SF Pro Display, Helvetica, Arial">
+$
+</text>
+
+</g>
+
+</svg>

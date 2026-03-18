@@ -1,21 +1,19 @@
-//
-//  AkaunApp.swift
-//  Akaun
-//
-//  Created by Tang Hao Quan on 11/03/2026.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct AkaunApp: App {
+    private let navigationModel = AppNavigationModel()
+    private let autoImportQueue = AutoImportQueue()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Expense.self,
+            Income.self,
+            Claim.self,
+            AppSequence.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
@@ -24,9 +22,21 @@ struct AkaunApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("") {
             ContentView()
+                .environment(navigationModel)
+                .environment(autoImportQueue)
+                .frame(minWidth: 900, minHeight: 600)
         }
         .modelContainer(sharedModelContainer)
+        .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    SettingsWindowController.show(modelContainer: sharedModelContainer)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
