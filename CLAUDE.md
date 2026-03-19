@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
-  -project /Users/tanghaoquan/Desktop/Akaun/Akaun.xcodeproj \
+  -project Akaun.xcodeproj \
   -scheme Akaun \
   -destination "platform=macOS" \
   build
@@ -31,7 +31,7 @@ Four `@Model` types registered in `AkaunApp.swift`:
 | Model | Key fields |
 |---|---|
 | `Expense` | `expenseNumber`, `itemName`, `supplier`, `date`, `amountCents: Int`, `reference`, `status: ExpenseStatus`, `documentFilename: String?`, `remark`, `category` (default `"Other"`), `claim: Claim?` |
-| `Payment` | `paymentNumber`, `date`, `remark` |
+| `Income` | `incomeNumber`, `date`, `amountCents: Int`, `remark` — running number prefix `"IN"` |
 | `Claim` | `claimNumber`, `date`, `status: ClaimStatus`, `expenses: [Expense]` (`.nullify` delete rule), computed `totalAmountCents` |
 | `AppSequence` | `prefix`, `dateKey`, `lastSequence` — backing store for running numbers |
 
