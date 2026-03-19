@@ -60,7 +60,8 @@ struct MonthlyTrendChartView: View {
     private var tooltipView: some View {
         if isHovering, let label = selectedLabel,
            let incomeItem = chartData.first(where: { $0.label == label && $0.series == "Income" }),
-           let expenseItem = chartData.first(where: { $0.label == label && $0.series == "Expenses" }) {
+           let expenseItem = chartData.first(where: { $0.label == label && $0.series == "Expenses" }),
+           incomeItem.amountCents > 0 || expenseItem.amountCents > 0 {
             VStack(alignment: .leading, spacing: 4) {
                 Text(label)
                     .font(.caption2)

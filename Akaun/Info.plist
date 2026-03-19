@@ -4,5 +4,26 @@
 <dict>
 	<key>CFBundleIconFile</key>
 	<string>Icon</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.quanlab.akaun.backup</string>
+			<key>UTTypeDescription</key>
+			<string>Akaun Backup</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>akaunbackup</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

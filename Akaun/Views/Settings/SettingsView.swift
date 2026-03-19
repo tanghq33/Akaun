@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
+import AppKit
 
 // MARK: - OpenRouter types
 
@@ -161,6 +163,136 @@ struct CategoriesPane: View {
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { categories = loadCategories() }
+    }
+}
+
+// MARK: - Backup pane
+
+struct BackupPane: View {
+    let modelContainer: ModelContainer
+
+    @AppStorage("backup.lastBackupDate") private var lastBackupDateInterval: Double = 0
+    @State private var isBackingUp = false
+    @State private var isRestoring = false
+    @State private var errorMessage: String? = nil
+    @State private var showRestoreConfirmation = false
+    @State private var pendingRestoreURL: URL? = nil
+
+    private var lastBackupText: String {
+        guard lastBackupDateInterval > 0 else { return "Never" }
+        let date = Date(timeIntervalSince1970: lastBackupDateInterval)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Last Backup") {
+                    Text(lastBackupText)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Create Backup…") {
+                    Task { await createBackup() }
+                }
+                .disabled(isBackingUp || isRestoring)
+            } header: {
+                Text("Backup")
+            } footer: {
+                Text("Saves all data, documents, and settings. The API key is not included.")
+            }
+
+            Section {
+                Button("Restore from Backup…") {
+                    Task { await pickRestoreFile() }
+                }
+                .foregroundStyle(.red)
+                .disabled(isBackingUp || isRestoring)
+            } header: {
+                Text("Restore")
+            } footer: {
+                Text("Restores from a .akaunbackup file. The app will restart automatically. The API key is not affected.")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .confirmationDialog(
+            "Restore from Backup?",
+            isPresented: $showRestoreConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore and Restart", role: .destructive) {
+                Task { await confirmRestore() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All current data will be replaced with the contents of the backup. The app will restart to apply the restore. This cannot be undone.")
+        }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func createBackup() async {
+        isBackingUp = true
+        defer { isBackingUp = false }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(exportedAs: "com.quanlab.akaun.backup")]
+        panel.canCreateDirectories = true
+        let dateStr = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date.now)
+        }()
+        panel.nameFieldStringValue = "Akaun Backup \(dateStr)"
+
+        guard let window = NSApp.keyWindow else { return }
+        let response = await panel.beginSheetModal(for: window)
+        guard response == .OK, let url = panel.url else { return }
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try BackupService.createBackup(to: url, modelContainer: modelContainer)
+            }.value
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func pickRestoreFile() async {
+        isRestoring = true
+        defer { isRestoring = false }
+
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(exportedAs: "com.quanlab.akaun.backup")]
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+
+        guard let window = NSApp.keyWindow else { return }
+        let response = await panel.beginSheetModal(for: window)
+        guard response == .OK, let url = panel.url else { return }
+
+        pendingRestoreURL = url
+        showRestoreConfirmation = true
+    }
+
+    private func confirmRestore() async {
+        guard let url = pendingRestoreURL else { return }
+        do {
+            try BackupService.stageRestore(from: url)
+            BackupService.restartApp()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 

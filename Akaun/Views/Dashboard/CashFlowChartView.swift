@@ -14,6 +14,7 @@ struct CashFlowChartView: View {
         let label: String
         let net: Double
         let netCents: Int
+        let hasData: Bool
     }
 
     private var chartData: [MonthlyNet] {
@@ -48,7 +49,7 @@ struct CashFlowChartView: View {
 
             let netCents = incomeTotal - expenseTotal
             let net = Double(netCents) / 100.0
-            data.append(MonthlyNet(label: label, net: net, netCents: netCents))
+            data.append(MonthlyNet(label: label, net: net, netCents: netCents, hasData: incomeTotal > 0 || expenseTotal > 0))
         }
 
         return data
@@ -81,7 +82,8 @@ struct CashFlowChartView: View {
             }
             .overlay(alignment: .topLeading) {
                 if isHovering, let label = selectedLabel,
-                   let item = chartData.first(where: { $0.label == label }) {
+                   let item = chartData.first(where: { $0.label == label }),
+                   item.hasData {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(label)
                             .font(.caption2)

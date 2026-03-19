@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import SwiftData
 
@@ -6,7 +7,10 @@ struct AkaunApp: App {
     private let navigationModel = AppNavigationModel()
     private let autoImportQueue = AutoImportQueue()
 
-    var sharedModelContainer: ModelContainer = {
+    var sharedModelContainer: ModelContainer
+
+    init() {
+        try? BackupService.applyPendingRestore()
         let schema = Schema([
             Expense.self,
             Income.self,
@@ -16,11 +20,11 @@ struct AkaunApp: App {
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
-    }()
+    }
 
     var body: some Scene {
         WindowGroup("") {

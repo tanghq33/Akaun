@@ -25,6 +25,7 @@ final class SettingsWindowController: NSWindowController {
         let tabs: [(String, String, AnyView)] = [
             ("Auto Import", "wand.and.stars", AnyView(AutoImportPane())),
             ("Categories",  "tag",            AnyView(CategoriesPane())),
+            ("Backup",      "externaldrive.badge.timemachine", AnyView(BackupPane(modelContainer: modelContainer))),
             ("Reset",       "arrow.counterclockwise", AnyView(ResetPane())),
         ]
 
