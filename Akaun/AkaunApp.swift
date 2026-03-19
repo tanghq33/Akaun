@@ -11,6 +11,7 @@ struct AkaunApp: App {
             Expense.self,
             Income.self,
             Claim.self,
+            Attachment.self,
             AppSequence.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
@@ -27,6 +28,7 @@ struct AkaunApp: App {
                 .environment(navigationModel)
                 .environment(autoImportQueue)
                 .frame(minWidth: 900, minHeight: 600)
+                .onAppear { migrateDocumentFilenameToAttachments() }
         }
         .modelContainer(sharedModelContainer)
         .windowToolbarStyle(.unified)
@@ -37,6 +39,24 @@ struct AkaunApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+        }
+    }
+
+    private func migrateDocumentFilenameToAttachments() {
+        let context = sharedModelContainer.mainContext
+        let descriptor = FetchDescriptor<Expense>()
+        guard let expenses = try? context.fetch(descriptor) else { return }
+        var migrated = false
+        for expense in expenses {
+            guard let filename = expense.documentFilename, !filename.isEmpty, expense.attachments.isEmpty else { continue }
+            let display = DocumentStore.displayName(for: filename)
+            let attachment = Attachment(filename: filename, displayName: display, addedDate: expense.date)
+            expense.attachments.append(attachment)
+            expense.documentFilename = nil
+            migrated = true
+        }
+        if migrated {
+            try? context.save()
         }
     }
 }

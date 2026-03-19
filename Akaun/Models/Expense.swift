@@ -3,6 +3,7 @@ import Foundation
 
 enum ExpenseStatus: String, Codable, CaseIterable {
     case unpaid = "Unpaid"
+    case pending = "Pending"
     case paid = "Paid"
 }
 
@@ -18,6 +19,9 @@ enum ExpenseStatus: String, Codable, CaseIterable {
     var remark: String
     var category: String = "Other"
     var claim: Claim?
+
+    @Relationship(deleteRule: .cascade, inverse: \Attachment.expense)
+    var attachments: [Attachment] = []
 
     init(
         expenseNumber: String = "",

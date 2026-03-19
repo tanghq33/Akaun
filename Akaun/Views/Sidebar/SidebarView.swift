@@ -7,7 +7,7 @@ struct SidebarView: View {
     @Query private var allExpenses: [Expense]
     @Query private var allClaims: [Claim]
 
-    private var unpaidCount: Int { allExpenses.filter { $0.status == .unpaid }.count }
+    private var unpaidCount: Int { allExpenses.filter { $0.status == .unpaid || $0.status == .pending }.count }
     private var pendingCount: Int { allClaims.filter { $0.status == .pending }.count }
 
     var body: some View {

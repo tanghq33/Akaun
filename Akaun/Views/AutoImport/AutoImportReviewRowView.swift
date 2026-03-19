@@ -12,6 +12,8 @@ struct AutoImportReviewRowView: View {
     @AppStorage("autoImport.maxTokens") private var maxTokens = 1024
 
     @State private var amountString = ""
+    @State private var quickLookCoordinator = QuickLookCoordinator()
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -21,19 +23,35 @@ struct AutoImportReviewRowView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     let filename = item.sourceFile.lastPathComponent
                     let displayName = item.itemName.isEmpty ? filename : item.itemName
-                    Text(displayName)
-                        .font(.body)
-                        .lineLimit(1)
+                    Button(displayName) {
+                        quickLookCoordinator.show(urls: [item.sourceFile], at: 0)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.body)
+                    .lineLimit(1)
                     if !item.itemName.isEmpty {
-                        Text(filename)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        Button(filename) {
+                            quickLookCoordinator.show(urls: [item.sourceFile], at: 0)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     }
                 }
                 Spacer()
+                Button {
+                    quickLookCoordinator.show(urls: [item.sourceFile], at: 0)
+                } label: {
+                    Image(systemName: "doc.viewfinder")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .opacity(isHovering ? 1 : 0)
                 actionButton
             }
+
+            .onHover { isHovering = $0 }
 
             // ── Error banner (only for .failed) ─────────────
             if case .failed(let msg) = item.state {
@@ -80,15 +98,6 @@ struct AutoImportReviewRowView: View {
                                 amountString = sanitiseAmount(new)
                                 item.amountCents = parseCents(amountString)
                             }
-                    }
-                    GridRow {
-                        Text("Status").font(.caption).foregroundStyle(.secondary)
-                            .gridColumnAlignment(.trailing)
-                        Picker("", selection: $item.status) {
-                            Text("Unpaid").tag(ExpenseStatus.unpaid)
-                            Text("Paid").tag(ExpenseStatus.paid)
-                        }
-                        .pickerStyle(.segmented).labelsHidden()
                     }
                     GridRow {
                         Text("Ref").font(.caption).foregroundStyle(.secondary)

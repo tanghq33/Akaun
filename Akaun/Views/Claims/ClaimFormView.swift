@@ -1,39 +1,23 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct ClaimFormView: View {
-    enum Mode {
-        case create
-        case edit(Claim)
-    }
-
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    let mode: Mode
-
     @State private var date = Date.now
-    @State private var status = ClaimStatus.pending
     @State private var selectedExpenseIDs: Set<PersistentIdentifier> = []
 
-    // All self-paid expenses with no claim linked
+    @State private var attachments: [AttachmentItem] = []
+    @State private var newFilenames: Set<String> = []
+    @State private var markAsPaid = false
+
     @Query(sort: \Expense.date, order: .reverse)
     private var allExpenses: [Expense]
 
-    private var isEdit: Bool {
-        if case .edit = mode { return true }
-        return false
-    }
-
-    /// Self-paid expenses that have no claim, plus those already linked to the claim being edited.
     private var availableExpenses: [Expense] {
-        if case .edit(let claim) = mode {
-            let linkedIDs = Set(claim.expenses.map { $0.persistentModelID })
-            return allExpenses.filter {
-                $0.status == .unpaid && ($0.claim == nil || linkedIDs.contains($0.persistentModelID))
-            }
-        }
-        return allExpenses.filter { $0.status == .unpaid && $0.claim == nil }
+        allExpenses.filter { $0.status == .unpaid && $0.claim == nil }
     }
 
     private var selectedTotal: Int {
@@ -47,14 +31,6 @@ struct ClaimFormView: View {
             Form {
                 Section("Details") {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
-                    if isEdit {
-                        Picker("Status", selection: $status) {
-                            ForEach(ClaimStatus.allCases, id: \.self) { s in
-                                Text(s.rawValue).tag(s)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
                 }
 
                 Section {
@@ -100,51 +76,70 @@ struct ClaimFormView: View {
                         }
                     }
                 }
+
+                AttachmentSectionView(
+                    attachments: $attachments,
+                    existingFilenames: [],
+                    newFilenames: $newFilenames
+                )
+
+                Section {
+                    Toggle("Mark as Paid", isOn: $markAsPaid)
+                        .disabled(attachments.isEmpty)
+                }
+            }
+            .onChange(of: attachments.count) { oldCount, newCount in
+                if oldCount == 0 && newCount > 0 {
+                    markAsPaid = true
+                } else if newCount == 0 {
+                    markAsPaid = false
+                }
             }
             .formStyle(.grouped)
-            .navigationTitle(isEdit ? "Edit Claim" : "New Claim")
+            .navigationTitle("New Claim")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { cancelAndCleanup() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
+                        .disabled(selectedExpenseIDs.isEmpty)
                 }
             }
         }
-        .onAppear { populateIfEditing() }
         .frame(minWidth: 500, minHeight: 500)
-    }
-
-    private func populateIfEditing() {
-        guard case .edit(let claim) = mode else { return }
-        date = claim.date
-        status = claim.status
-        selectedExpenseIDs = Set(claim.expenses.map { $0.persistentModelID })
     }
 
     private func save() {
         let selectedExpenses = availableExpenses.filter { selectedExpenseIDs.contains($0.persistentModelID) }
 
-        switch mode {
-        case .create:
-            let claim = Claim(
-                claimNumber: RunningNumberGenerator.next(prefix: "CL", for: date, in: modelContext),
-                date: date,
-                status: .pending
-            )
-            modelContext.insert(claim)
-            claim.expenses = selectedExpenses
-            try? modelContext.save()
+        let claimStatus: ClaimStatus = markAsPaid ? .done : .pending
+        let expenseStatus: ExpenseStatus = markAsPaid ? .paid : .pending
 
-        case .edit(let claim):
-            claim.date = date
-            claim.status = status
-            // Unlink expenses that were removed from the selection
-            for expense in claim.expenses where !selectedExpenseIDs.contains(expense.persistentModelID) {
-                expense.claim = nil
-            }
-            claim.expenses = selectedExpenses
+        let claim = Claim(
+            claimNumber: RunningNumberGenerator.next(prefix: "CL", for: date, in: modelContext),
+            date: date,
+            status: claimStatus
+        )
+        modelContext.insert(claim)
+        claim.expenses = selectedExpenses
+
+        for expense in selectedExpenses {
+            expense.status = expenseStatus
+        }
+
+        for item in attachments {
+            let att = Attachment(filename: item.filename, displayName: item.displayName)
+            claim.attachments.append(att)
+        }
+
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func cancelAndCleanup() {
+        for filename in newFilenames {
+            DocumentStore.deleteFile(named: filename)
         }
         dismiss()
     }

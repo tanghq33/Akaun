@@ -30,6 +30,7 @@ struct ExpenseRowView: View {
     private func statusColor(_ status: ExpenseStatus) -> Color {
         switch status {
         case .unpaid: return .red
+        case .pending: return .orange
         case .paid: return .green
         }
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 enum DocumentStore {
     private static var documentsURL: URL {
@@ -30,6 +31,20 @@ enum DocumentStore {
     static func deleteFile(named filename: String) {
         let fileURL = documentsURL.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Strip the UUID prefix to recover the original filename for display.
+    static func displayName(for filename: String) -> String {
+        let parts = filename.components(separatedBy: "_")
+        guard parts.count > 1 else { return filename }
+        return parts.dropFirst().joined(separator: "_")
+    }
+
+    /// Delete the files backing an array of Attachments.
+    static func deleteFiles(for attachments: [Attachment]) {
+        for attachment in attachments {
+            deleteFile(named: attachment.filename)
+        }
     }
 
     /// Remove all files from the app's Documents directory.

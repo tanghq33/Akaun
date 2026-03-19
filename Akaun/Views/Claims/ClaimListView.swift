@@ -26,7 +26,7 @@ struct ClaimListView: View {
             }
         }
         .sheet(isPresented: $showingForm) {
-            ClaimFormView(mode: .create)
+            ClaimFormView()
         }
     }
 }

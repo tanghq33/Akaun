@@ -46,22 +46,11 @@ struct ExpenseDetailView: View {
                             DetailRow(label: "Claim", value: claimNumber)
                         }
 
-                        // Document attachment
-                        if let filename = expense.documentFilename {
-                            Divider()
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Attachment")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Button {
-                                    NSWorkspace.shared.open(DocumentStore.url(for: filename))
-                                } label: {
-                                    Label(filename.components(separatedBy: "_").dropFirst().joined(separator: "_"),
-                                          systemImage: "paperclip")
-                                }
-                                .buttonStyle(.link)
-                            }
-                        }
+                        // Attachments
+                        AttachmentListView(
+                            attachments: expense.attachments,
+                            legacyFilename: expense.documentFilename
+                        )
                     }
                     .padding()
                 }
@@ -69,11 +58,13 @@ struct ExpenseDetailView: View {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Edit") { showingEditForm = true }
                     }
-                    ToolbarItem {
-                        Button(role: .destructive) {
-                            showingDeleteConfirm = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                    if expense.claim == nil {
+                        ToolbarItem {
+                            Button(role: .destructive) {
+                                showingDeleteConfirm = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -83,7 +74,7 @@ struct ExpenseDetailView: View {
                 .confirmationDialog("Delete Expense?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) { deleteExpense(expense) }
                 } message: {
-                    Text("This will permanently delete the expense and its attachment.")
+                    Text("This will permanently delete the expense and its attachments.")
                 }
             } else {
                 ContentUnavailableView("Expense Not Found", systemImage: "doc.text")
@@ -95,13 +86,15 @@ struct ExpenseDetailView: View {
     private func statusColor(_ status: ExpenseStatus) -> Color {
         switch status {
         case .unpaid: return .red
+        case .pending: return .orange
         case .paid: return .green
         }
     }
 
     private func deleteExpense(_ expense: Expense) {
-        if let filename = expense.documentFilename {
-            DocumentStore.deleteFile(named: filename)
+        DocumentStore.deleteFiles(for: expense.attachments)
+        if let legacy = expense.documentFilename {
+            DocumentStore.deleteFile(named: legacy)
         }
         nav.selectedExpenseID = nil
         modelContext.delete(expense)

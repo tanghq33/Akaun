@@ -1,5 +1,32 @@
 import AppKit
+import Quartz
+import QuickLookUI
 import SwiftUI
+import SwiftData
+
+// MARK: - QuickLook Preview Support
+
+final class QuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    var previewURLs: [URL] = []
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        previewURLs.count
+    }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        previewURLs[index] as NSURL
+    }
+
+    func show(urls: [URL], at index: Int) {
+        previewURLs = urls
+        guard let panel = QLPreviewPanel.shared() else { return }
+        panel.dataSource = self
+        panel.delegate = self
+        panel.currentPreviewItemIndex = index
+        panel.reloadData()
+        panel.makeKeyAndOrderFront(nil)
+    }
+}
 
 struct StatusBadge: View {
     let text: String
@@ -60,6 +87,43 @@ struct DetailRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(value)
+        }
+    }
+}
+
+struct AttachmentListView: View {
+    let attachments: [Attachment]
+    /// Fallback legacy filename shown when attachments array is empty.
+    var legacyFilename: String? = nil
+
+    @State private var quickLookCoordinator = QuickLookCoordinator()
+
+    var body: some View {
+        let items: [(String, String)] = {
+            if !attachments.isEmpty {
+                return attachments.map { ($0.filename, $0.displayName) }
+            } else if let legacy = legacyFilename {
+                return [(legacy, DocumentStore.displayName(for: legacy))]
+            }
+            return []
+        }()
+
+        if !items.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(items.count == 1 ? "Attachment" : "Attachments (\(items.count))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(Array(items.enumerated()), id: \.element.0) { index, item in
+                    Button {
+                        let urls = items.map { DocumentStore.url(for: $0.0) }
+                        quickLookCoordinator.show(urls: urls, at: index)
+                    } label: {
+                        Label(item.1, systemImage: "paperclip")
+                    }
+                    .buttonStyle(.link)
+                }
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ struct ClaimDetailView: View {
 
     let claimID: PersistentIdentifier
 
-    @State private var showingEditForm = false
+    @State private var showingClaimSheet = false
     @State private var showingDeleteConfirm = false
 
     private var claim: Claim? {
@@ -62,12 +62,20 @@ struct ClaimDetailView: View {
                             .padding(.vertical, 2)
                             Divider()
                         }
+
+                        AttachmentListView(attachments: claim.attachments)
                     }
                     .padding()
                 }
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Edit") { showingEditForm = true }
+                    if claim.status == .pending {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button {
+                                showingClaimSheet = true
+                            } label: {
+                                Label("Mark as Claimed", systemImage: "checkmark.circle")
+                            }
+                        }
                     }
                     ToolbarItem {
                         Button(role: .destructive) {
@@ -77,21 +85,30 @@ struct ClaimDetailView: View {
                         }
                     }
                 }
-                .sheet(isPresented: $showingEditForm) {
-                    ClaimFormView(mode: .edit(claim))
+                .sheet(isPresented: $showingClaimSheet) {
+                    ClaimConfirmationView(claim: claim)
                 }
                 .confirmationDialog("Delete Claim?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) {
-                        nav.selectedClaimID = nil
-                        modelContext.delete(claim)
+                        deleteClaim(claim)
                     }
                 } message: {
-                    Text("Linked expenses will remain but will no longer be part of this claim.")
+                    Text("Linked expenses will revert to Unpaid. Claim attachments will be deleted.")
                 }
             } else {
                 ContentUnavailableView("Claim Not Found", systemImage: "list.bullet.clipboard")
             }
         }
         .navigationTitle(claim?.claimNumber ?? "Claim")
+    }
+
+    private func deleteClaim(_ claim: Claim) {
+        // Revert linked expenses to unpaid
+        for expense in claim.expenses {
+            expense.status = .unpaid
+        }
+        DocumentStore.deleteFiles(for: claim.attachments)
+        nav.selectedClaimID = nil
+        modelContext.delete(claim)
     }
 }

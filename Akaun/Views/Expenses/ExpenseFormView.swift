@@ -18,125 +18,80 @@ struct ExpenseFormView: View {
     @State private var date = Date.now
     @State private var amountString = ""
     @State private var reference = ""
-    @State private var status = ExpenseStatus.unpaid
     @State private var remark = ""
-    @State private var documentFilename: String?
 
     @State private var category = "Other"
 
-    @State private var showingFilePicker = false
-    @State private var fileImportError: String?
-    @State private var isDragTargeted = false
+    @State private var attachments: [AttachmentItem] = []
+    @State private var existingFilenames: Set<String> = []
+    @State private var newFilenames: Set<String> = []
 
     private var isEdit: Bool {
         if case .edit = mode { return true }
         return false
     }
 
+    /// Expenses in pending or paid status are locked — only category can be changed.
+    private var isLocked: Bool {
+        if case .edit(let expense) = mode {
+            return expense.status == .pending || expense.status == .paid
+        }
+        return false
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if isLocked {
+                    Section {
+                        Text("This expense is \(editingExpenseStatus) and cannot be fully edited. Only the category can be changed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Details") {
                     TextField("Item Name", text: $itemName)
+                        .disabled(isLocked)
                     TextField("Supplier", text: $supplier)
+                        .disabled(isLocked)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .disabled(isLocked)
                     TextField("Amount (RM)", text: $amountString)
+                        .disabled(isLocked)
                         .onChange(of: amountString) { _, new in
                             amountString = sanitiseAmount(new)
                         }
                     TextField("Reference", text: $reference)
+                        .disabled(isLocked)
                     Picker("Category", selection: $category) {
                         ForEach(loadCategories(), id: \.self) { Text($0).tag($0) }
                     }
                 }
 
-                Section("Status") {
-                    Picker("Status", selection: $status) {
-                        Text("Unpaid").tag(ExpenseStatus.unpaid)
-                        Text("Paid").tag(ExpenseStatus.paid)
-                    }
-                    .pickerStyle(.segmented)
-                }
-
                 Section("Remark") {
                     TextEditor(text: $remark)
                         .frame(minHeight: 60)
+                        .disabled(isLocked)
                 }
 
-                Section("Attachment") {
-                    if let filename = documentFilename {
-                        let displayName = filename.components(separatedBy: "_").dropFirst().joined(separator: "_")
-                        HStack {
-                            Label(displayName, systemImage: "paperclip")
-                            Spacer()
-                            Button("Remove", role: .destructive) {
-                                if case .edit(let expense) = mode, expense.documentFilename == filename {
-                                    DocumentStore.deleteFile(named: filename)
-                                }
-                                documentFilename = nil
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(
-                                    isDragTargeted ? Color.accentColor : Color.secondary.opacity(0.35),
-                                    style: StrokeStyle(lineWidth: 1.5, dash: [6])
-                                )
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(isDragTargeted ? Color.accentColor.opacity(0.06) : Color.clear)
-                                )
-                            VStack(spacing: 6) {
-                                Image(systemName: "arrow.down.doc")
-                                    .font(.title2)
-                                    .foregroundStyle(isDragTargeted ? Color.accentColor : Color.secondary)
-                                Text("Drop file here")
-                                    .foregroundStyle(.secondary)
-                                    .font(.subheadline)
-                                Button("Browse…") { showingFilePicker = true }
-                                    .buttonStyle(.borderless)
-                            }
-                            .padding(.vertical, 16)
-                        }
-                        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
-                            guard let provider = providers.first else { return false }
-                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
-                                guard let data = item as? Data,
-                                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                                DispatchQueue.main.async { attachURL(url) }
-                            }
-                            return true
-                        }
-                    }
-                    if let error = fileImportError {
-                        Text(error).foregroundStyle(.red).font(.caption)
-                    }
+                if !isLocked {
+                    AttachmentSectionView(
+                        attachments: $attachments,
+                        existingFilenames: existingFilenames,
+                        newFilenames: $newFilenames
+                    )
                 }
             }
             .formStyle(.grouped)
             .navigationTitle(isEdit ? "Edit Expense" : "New Expense")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { cancelAndCleanup() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(itemName.isEmpty)
-                }
-            }
-            .fileImporter(
-                isPresented: $showingFilePicker,
-                allowedContentTypes: [.pdf, .image],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    attachURL(url)
-                case .failure(let error):
-                    fileImportError = error.localizedDescription
                 }
             }
         }
@@ -144,14 +99,11 @@ struct ExpenseFormView: View {
         .frame(minWidth: 480, minHeight: 500)
     }
 
-    private func attachURL(_ url: URL) {
-        do {
-            let filename = try DocumentStore.importFile(from: url)
-            documentFilename = filename
-            fileImportError = nil
-        } catch {
-            fileImportError = "Could not attach file: \(error.localizedDescription)"
+    private var editingExpenseStatus: String {
+        if case .edit(let expense) = mode {
+            return expense.status.rawValue.lowercased()
         }
+        return ""
     }
 
     private func populateIfEditing() {
@@ -161,10 +113,17 @@ struct ExpenseFormView: View {
         date = expense.date
         amountString = String(format: "%.2f", Double(expense.amountCents) / 100.0)
         reference = expense.reference
-        status = expense.status
         remark = expense.remark
         category = expense.category
-        documentFilename = expense.documentFilename
+
+        if !expense.attachments.isEmpty {
+            attachments = expense.attachments.map { AttachmentItem(filename: $0.filename, displayName: $0.displayName) }
+            existingFilenames = Set(expense.attachments.map { $0.filename })
+        } else if let legacy = expense.documentFilename, !legacy.isEmpty {
+            let display = DocumentStore.displayName(for: legacy)
+            attachments = [AttachmentItem(filename: legacy, displayName: display)]
+            existingFilenames = [legacy]
+        }
     }
 
     private func save() {
@@ -178,23 +137,49 @@ struct ExpenseFormView: View {
                 date: date,
                 amountCents: cents,
                 reference: reference,
-                status: status,
-                documentFilename: documentFilename,
+                status: .unpaid,
                 remark: remark,
                 category: category
             )
             modelContext.insert(expense)
+            for item in attachments {
+                let att = Attachment(filename: item.filename, displayName: item.displayName)
+                expense.attachments.append(att)
+            }
             try? modelContext.save()
+
         case .edit(let expense):
-            expense.itemName = itemName
-            expense.supplier = supplier
-            expense.date = date
-            expense.amountCents = cents
-            expense.reference = reference
-            expense.status = status
-            expense.documentFilename = documentFilename
-            expense.remark = remark
-            expense.category = category
+            if isLocked {
+                // Only category can change
+                expense.category = category
+            } else {
+                expense.itemName = itemName
+                expense.supplier = supplier
+                expense.date = date
+                expense.amountCents = cents
+                expense.reference = reference
+                expense.remark = remark
+                expense.category = category
+
+                // Diff attachments
+                let currentFilenames = Set(attachments.map { $0.filename })
+                for existing in expense.attachments where !currentFilenames.contains(existing.filename) {
+                    modelContext.delete(existing)
+                }
+                let existingModelFilenames = Set(expense.attachments.map { $0.filename })
+                for item in attachments where !existingModelFilenames.contains(item.filename) {
+                    let att = Attachment(filename: item.filename, displayName: item.displayName)
+                    expense.attachments.append(att)
+                }
+                expense.documentFilename = nil
+            }
+        }
+        dismiss()
+    }
+
+    private func cancelAndCleanup() {
+        for filename in newFilenames {
+            DocumentStore.deleteFile(named: filename)
         }
         dismiss()
     }

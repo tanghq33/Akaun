@@ -40,13 +40,15 @@ struct ExpenseListView: View {
                 }
             }
         } message: {
-            Text("This will permanently delete the expense and its attachment.")
+            Text("This will permanently delete the expense and its attachments.")
         }
     }
 
     private func deleteExpense(_ expense: Expense) {
-        if let filename = expense.documentFilename {
-            DocumentStore.deleteFile(named: filename)
+        guard expense.claim == nil else { return }
+        DocumentStore.deleteFiles(for: expense.attachments)
+        if let legacy = expense.documentFilename {
+            DocumentStore.deleteFile(named: legacy)
         }
         if nav.selectedExpenseID == expense.persistentModelID {
             nav.selectedExpenseID = nil

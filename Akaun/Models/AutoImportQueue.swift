@@ -93,6 +93,7 @@ final class AutoImportQueue {
     func importItem(_ item: AutoImportQueueItem, in context: ModelContext) {
         do {
             let filename = try DocumentStore.importFile(from: item.sourceFile)
+            let displayName = DocumentStore.displayName(for: filename)
             let expense = Expense(
                 expenseNumber: RunningNumberGenerator.next(prefix: "EX", for: item.date, in: context),
                 itemName: item.itemName,
@@ -101,10 +102,11 @@ final class AutoImportQueue {
                 amountCents: item.amountCents,
                 reference: item.reference,
                 status: item.status,
-                documentFilename: filename,
                 category: item.category
             )
             context.insert(expense)
+            let attachment = Attachment(filename: filename, displayName: displayName, addedDate: item.date)
+            expense.attachments.append(attachment)
             try? context.save()
             item.state = .imported
         } catch {
