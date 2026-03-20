@@ -273,8 +273,8 @@ struct BackupPane: View {
 
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(exportedAs: "com.quanlab.akaun.backup")]
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
 
         guard let window = NSApp.keyWindow else { return }

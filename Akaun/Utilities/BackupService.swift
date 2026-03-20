@@ -45,9 +45,13 @@ enum BackupService {
 
     // MARK: - Private URL helpers
 
-    private static var appSupportURL: URL {
+    static var appSupportURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Akaun", isDirectory: true)
+    }
+
+    static var defaultStoreURL: URL {
+        appSupportURL.appendingPathComponent("default.store")
     }
 
     private static var stagingURL: URL {
@@ -217,6 +221,7 @@ enum BackupService {
         // Replace store files
         let stagedDB = stagingURL.appendingPathComponent("database")
         if fm.fileExists(atPath: stagedDB.path) {
+            try fm.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
             // Remove existing store files
             let storeNames = ["default.store", "default.store-wal", "default.store-shm"]
             for name in storeNames {
@@ -240,7 +245,11 @@ enum BackupService {
     static func restartApp() {
         let url = Bundle.main.bundleURL
         let config = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
-        NSApplication.shared.terminate(nil)
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        }
     }
 }

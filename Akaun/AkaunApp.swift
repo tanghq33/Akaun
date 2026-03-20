@@ -18,7 +18,12 @@ struct AkaunApp: App {
             Attachment.self,
             AppSequence.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        try? FileManager.default.createDirectory(
+            at: BackupService.appSupportURL,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        let modelConfiguration = ModelConfiguration(schema: schema, url: BackupService.defaultStoreURL)
         do {
             sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
