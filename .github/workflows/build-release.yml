@@ -1,0 +1,81 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Set up SSH key for submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"        # e.g. v1.2.3
+          VERSION="${TAG#v}"              # strip 'v' → 1.2.3
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Release)
+        run: |
+          rm -rf build && mkdir -p build
+          /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
+            -project Akaun.xcodeproj \
+            -scheme Akaun \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            -destination "platform=macOS" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            REGISTER_APP_GROUPS=NO \
+            MARKETING_VERSION=${{ steps.version.outputs.version }} \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.version }} \
+            build
+
+      - name: Ad-hoc sign
+        run: |
+          APP="build/DerivedData/Build/Products/Release/Akaun.app"
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+
+      - name: Create DMG
+        id: dmg
+        run: |
+          APP="build/DerivedData/Build/Products/Release/Akaun.app"
+          DMG="build/Akaun-${{ steps.version.outputs.version }}.dmg"
+          bash scripts/create-dmg/create-dmg \
+            --volname "Akaun" \
+            --window-size 500 320 \
+            --icon-size 96 \
+            --icon "Akaun.app" 150 160 \
+            --app-drop-link 350 160 \
+            --no-internet-enable \
+            --skip-jenkins \
+            "$DMG" "$APP"
+          echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Akaun ${{ steps.version.outputs.version }}
+          files: ${{ steps.dmg.outputs.dmg }}
+          fail_on_unmatched_files: true
