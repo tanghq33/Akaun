@@ -4,6 +4,7 @@ import SwiftData
 
 @main
 struct AkaunApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     private let navigationModel = AppNavigationModel()
     private let autoImportQueue = AutoImportQueue()
 
@@ -137,5 +138,18 @@ struct AkaunApp: App {
         if migrated {
             try? context.save()
         }
+    }
+}
+
+// MARK: - AppDelegate
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Close duplicate windows left over from macOS window state restoration.
+        let visible = NSApp.windows.filter { $0.canBecomeKey && $0.isVisible }
+        visible.dropFirst().forEach { $0.close() }
+
+        // Prevent future state restoration from recreating duplicates.
+        NSApp.windows.forEach { $0.isRestorable = false }
     }
 }

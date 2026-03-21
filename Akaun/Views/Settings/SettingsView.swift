@@ -410,52 +410,63 @@ struct CategoriesPane: View {
     @State private var newCategoryText = ""
     @State private var incomeCategories: [String] = []
     @State private var newIncomeCategoryText = ""
+    @State private var expenseDragItem: String? = nil
+    @State private var expenseDragOffset: CGFloat = 0
+    @State private var incomeDragItem: String? = nil
+    @State private var incomeDragOffset: CGFloat = 0
+
     var body: some View {
         Form {
-                Section("Expense Categories") {
-                    ForEach(categories, id: \.self) { cat in
-                        categoryRow(cat, in: $categories, save: saveCategories)
-                    }
-                    HStack {
-                        TextField("New category", text: $newCategoryText)
-                        Button("Add") {
-                            let trimmed = newCategoryText.trimmingCharacters(in: .whitespaces)
-                            guard !trimmed.isEmpty, !categories.contains(trimmed) else { return }
-                            categories.append(trimmed)
-                            saveCategories(categories)
-                            newCategoryText = ""
-                        }
-                        .disabled(newCategoryText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    Button("Restore Defaults") {
-                        categories = defaultCategories
+            Section("Expense Categories") {
+                ForEach(categories, id: \.self) { cat in
+                    categoryRow(cat, in: $categories,
+                                dragItem: $expenseDragItem,
+                                dragOffset: $expenseDragOffset,
+                                save: saveCategories)
+                }
+                HStack {
+                    TextField("New category", text: $newCategoryText)
+                    Button("Add") {
+                        let trimmed = newCategoryText.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty, !categories.contains(trimmed) else { return }
+                        categories.append(trimmed)
                         saveCategories(categories)
+                        newCategoryText = ""
                     }
-                    .foregroundStyle(.secondary)
+                    .disabled(newCategoryText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-
-                Section("Income Categories") {
-                    ForEach(incomeCategories, id: \.self) { cat in
-                        categoryRow(cat, in: $incomeCategories, save: saveIncomeCategories)
-                    }
-                    HStack {
-                        TextField("New category", text: $newIncomeCategoryText)
-                        Button("Add") {
-                            let trimmed = newIncomeCategoryText.trimmingCharacters(in: .whitespaces)
-                            guard !trimmed.isEmpty, !incomeCategories.contains(trimmed) else { return }
-                            incomeCategories.append(trimmed)
-                            saveIncomeCategories(incomeCategories)
-                            newIncomeCategoryText = ""
-                        }
-                        .disabled(newIncomeCategoryText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    Button("Restore Defaults") {
-                        incomeCategories = defaultIncomeCategories
-                        saveIncomeCategories(incomeCategories)
-                    }
-                    .foregroundStyle(.secondary)
+                Button("Restore Defaults") {
+                    categories = defaultCategories
+                    saveCategories(categories)
                 }
+                .foregroundStyle(.secondary)
             }
+
+            Section("Income Categories") {
+                ForEach(incomeCategories, id: \.self) { cat in
+                    categoryRow(cat, in: $incomeCategories,
+                                dragItem: $incomeDragItem,
+                                dragOffset: $incomeDragOffset,
+                                save: saveIncomeCategories)
+                }
+                HStack {
+                    TextField("New category", text: $newIncomeCategoryText)
+                    Button("Add") {
+                        let trimmed = newIncomeCategoryText.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty, !incomeCategories.contains(trimmed) else { return }
+                        incomeCategories.append(trimmed)
+                        saveIncomeCategories(incomeCategories)
+                        newIncomeCategoryText = ""
+                    }
+                    .disabled(newIncomeCategoryText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                Button("Restore Defaults") {
+                    incomeCategories = defaultIncomeCategories
+                    saveIncomeCategories(incomeCategories)
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
@@ -464,13 +475,65 @@ struct CategoriesPane: View {
         }
     }
 
+    private func computeShift(for cat: String, in list: [String],
+                              dragItem: String?, dragOffset: CGFloat,
+                              rowHeight: CGFloat) -> CGFloat {
+        guard let df = dragItem.flatMap({ list.firstIndex(of: $0) }),
+              let fromIdx = list.firstIndex(of: cat),
+              dragItem != cat else { return 0 }
+        let moved = Int((dragOffset / rowHeight).rounded())
+        let targetIdx = max(0, min(list.count - 1, df + moved))
+        if df < fromIdx && fromIdx <= targetIdx { return -rowHeight }
+        if df > fromIdx && fromIdx >= targetIdx { return rowHeight }
+        return 0
+    }
+
     @ViewBuilder
-    private func categoryRow(_ cat: String, in list: Binding<[String]>, save: @escaping ([String]) -> Void) -> some View {
+    private func categoryRow(
+        _ cat: String,
+        in list: Binding<[String]>,
+        dragItem: Binding<String?>,
+        dragOffset: Binding<CGFloat>,
+        save: @escaping ([String]) -> Void
+    ) -> some View {
+        let rowHeight: CGFloat = 36
+        let isDragging = dragItem.wrappedValue == cat
+        let shiftY = computeShift(for: cat, in: list.wrappedValue,
+                                  dragItem: dragItem.wrappedValue,
+                                  dragOffset: dragOffset.wrappedValue,
+                                  rowHeight: rowHeight)
+
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.secondary)
                 .imageScale(.small)
                 .frame(width: 20)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if dragItem.wrappedValue == nil { dragItem.wrappedValue = cat }
+                            dragOffset.wrappedValue = value.translation.height
+                        }
+                        .onEnded { _ in
+                            guard let dragged = dragItem.wrappedValue,
+                                  let from = list.wrappedValue.firstIndex(of: dragged) else {
+                                dragItem.wrappedValue = nil
+                                dragOffset.wrappedValue = 0
+                                return
+                            }
+                            let moved = Int((dragOffset.wrappedValue / rowHeight).rounded())
+                            let to = max(0, min(list.wrappedValue.count - 1, from + moved))
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                if from != to {
+                                    list.wrappedValue.move(fromOffsets: IndexSet(integer: from),
+                                                           toOffset: to > from ? to + 1 : to)
+                                    save(list.wrappedValue)
+                                }
+                                dragItem.wrappedValue = nil
+                                dragOffset.wrappedValue = 0
+                            }
+                        }
+                )
             Text(cat)
             Spacer()
             Button {
@@ -483,25 +546,11 @@ struct CategoriesPane: View {
             .buttonStyle(.plain)
         }
         .contentShape(Rectangle())
-        .draggable(cat) {
-            Text(cat)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.regularMaterial)
-                .clipShape(.rect(cornerRadius: 6))
-        }
-        .dropDestination(for: String.self) { items, _ in
-            guard let dragged = items.first,
-                  let from = list.wrappedValue.firstIndex(of: dragged),
-                  let to   = list.wrappedValue.firstIndex(of: cat),
-                  from != to else { return false }
-            withAnimation {
-                list.wrappedValue.move(fromOffsets: IndexSet(integer: from),
-                                       toOffset: to > from ? to + 1 : to)
-            }
-            save(list.wrappedValue)
-            return true
-        }
+        .offset(y: isDragging ? dragOffset.wrappedValue : shiftY)
+        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: shiftY)
+        .zIndex(isDragging ? 1 : 0)
+        .scaleEffect(isDragging ? 1.02 : 1, anchor: .center)
+        .shadow(color: .black.opacity(isDragging ? 0.15 : 0), radius: isDragging ? 4 : 0)
     }
 }
 
