@@ -35,9 +35,23 @@ struct IncomeDetailView: View {
 
                         Divider()
 
+                        if !income.descriptionText.isEmpty {
+                            DetailRow(label: "Description", value: income.descriptionText)
+                        }
+                        if !income.source.isEmpty {
+                            DetailRow(label: "Source", value: income.source)
+                        }
+                        if !income.reference.isEmpty {
+                            DetailRow(label: "Reference", value: income.reference)
+                        }
+                        if !income.category.isEmpty {
+                            DetailRow(label: "Category", value: income.category)
+                        }
                         if !income.remark.isEmpty {
                             DetailRow(label: "Remark", value: income.remark)
                         }
+
+                        IncomeAttachmentListView(attachments: income.attachments)
                     }
                     .padding()
                 }
@@ -58,14 +72,47 @@ struct IncomeDetailView: View {
                 }
                 .confirmationDialog("Delete Income?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) {
-                        nav.selectedIncomeID = nil
-                        modelContext.delete(income)
+                        deleteIncome(income)
                     }
                 }
             } else {
                 ContentUnavailableView("Income Not Found", systemImage: "banknote")
             }
         }
-        .navigationTitle(income?.incomeNumber ?? "Income")
+        .navigationTitle(income.flatMap { $0.descriptionText.isEmpty ? nil : $0.descriptionText } ?? income?.incomeNumber ?? "Income")
+    }
+
+    private func deleteIncome(_ income: Income) {
+        nav.selectedIncomeID = nil
+        for attachment in income.attachments {
+            DocumentStore.deleteFile(named: attachment.filename)
+        }
+        modelContext.delete(income)
+    }
+}
+
+private struct IncomeAttachmentListView: View {
+    let attachments: [IncomeAttachment]
+
+    @State private var quickLookCoordinator = QuickLookCoordinator()
+
+    var body: some View {
+        if !attachments.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(attachments.count == 1 ? "Attachment" : "Attachments (\(attachments.count))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(Array(attachments.enumerated()), id: \.element.filename) { index, attachment in
+                    Button {
+                        let urls = attachments.map { DocumentStore.url(for: $0.filename) }
+                        quickLookCoordinator.show(urls: urls, at: index)
+                    } label: {
+                        Label(attachment.displayName, systemImage: "paperclip")
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+        }
     }
 }

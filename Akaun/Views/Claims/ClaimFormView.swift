@@ -26,6 +26,12 @@ struct ClaimFormView: View {
             .reduce(0) { $0 + $1.amountCents }
     }
 
+    private var allExpensesSelected: Bool {
+        !availableExpenses.isEmpty && availableExpenses.allSatisfy {
+            selectedExpenseIDs.contains($0.persistentModelID)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -69,6 +75,14 @@ struct ClaimFormView: View {
                     HStack {
                         Text("Expenses")
                         Spacer()
+                        if !availableExpenses.isEmpty {
+                            Button(allExpensesSelected ? "Deselect All" : "Select All") {
+                                toggleSelectAll()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.accentColor)
+                        }
                         if !selectedExpenseIDs.isEmpty {
                             Text("Total: \(Formatters.formatCents(selectedTotal))")
                                 .font(.caption)
@@ -78,6 +92,7 @@ struct ClaimFormView: View {
                 }
 
                 AttachmentSectionView(
+                    subfolder: "Claims",
                     attachments: $attachments,
                     existingFilenames: [],
                     newFilenames: $newFilenames
@@ -129,12 +144,20 @@ struct ClaimFormView: View {
         }
 
         for item in attachments {
-            let att = Attachment(filename: item.filename, displayName: item.displayName)
-            claim.attachments.append(att)
+            let att = ClaimAttachment(filename: item.filename, displayName: item.displayName)
+            claim.claimAttachments.append(att)
         }
 
         try? modelContext.save()
         dismiss()
+    }
+
+    private func toggleSelectAll() {
+        if allExpensesSelected {
+            selectedExpenseIDs.removeAll()
+        } else {
+            selectedExpenseIDs = Set(availableExpenses.map { $0.persistentModelID })
+        }
     }
 
     private func cancelAndCleanup() {

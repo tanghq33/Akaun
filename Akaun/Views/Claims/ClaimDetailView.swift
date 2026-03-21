@@ -63,7 +63,7 @@ struct ClaimDetailView: View {
                             Divider()
                         }
 
-                        AttachmentListView(attachments: claim.attachments)
+                        AttachmentListView(claimAttachments: claim.claimAttachments)
                     }
                     .padding()
                 }
@@ -107,7 +107,7 @@ struct ClaimDetailView: View {
         for expense in claim.expenses {
             expense.status = .unpaid
         }
-        DocumentStore.deleteFiles(for: claim.attachments)
+        DocumentStore.deleteFiles(for: claim.claimAttachments)
         nav.selectedClaimID = nil
         modelContext.delete(claim)
     }

@@ -9,17 +9,20 @@ enum DocumentStore {
         return dir
     }
 
-    /// Copy a file from `source` into the app's Documents folder with a UUID prefix.
-    /// Returns the stored filename (UUID + original name).
+    /// Copy a file from `source` into the app's Documents folder (optionally into a subfolder) with a UUID prefix.
+    /// Returns the stored path relative to Documents (e.g. "Expenses/UUID_name.pdf").
     @discardableResult
-    static func importFile(from source: URL) throws -> String {
+    static func importFile(from source: URL, subfolder: String = "") throws -> String {
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
 
         let filename = UUID().uuidString + "_" + source.lastPathComponent
-        let destination = documentsURL.appendingPathComponent(filename)
+        let storedName = subfolder.isEmpty ? filename : subfolder + "/" + filename
+        let destination = documentsURL.appendingPathComponent(storedName)
+        try? FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: source, to: destination)
-        return filename
+        return storedName
     }
 
     /// Reconstruct the full URL for a stored filename.
@@ -33,15 +36,23 @@ enum DocumentStore {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
-    /// Strip the UUID prefix to recover the original filename for display.
+    /// Strip the subfolder prefix and UUID to recover the original filename for display.
     static func displayName(for filename: String) -> String {
-        let parts = filename.components(separatedBy: "_")
-        guard parts.count > 1 else { return filename }
+        let base = (filename as NSString).lastPathComponent
+        let parts = base.components(separatedBy: "_")
+        guard parts.count > 1 else { return base }
         return parts.dropFirst().joined(separator: "_")
     }
 
     /// Delete the files backing an array of Attachments.
     static func deleteFiles(for attachments: [Attachment]) {
+        for attachment in attachments {
+            deleteFile(named: attachment.filename)
+        }
+    }
+
+    /// Delete the files backing an array of ClaimAttachments.
+    static func deleteFiles(for attachments: [ClaimAttachment]) {
         for attachment in attachments {
             deleteFile(named: attachment.filename)
         }

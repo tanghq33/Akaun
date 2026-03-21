@@ -124,10 +124,12 @@ struct AutoImportPane: View {
 struct CategoriesPane: View {
     @State private var categories: [String] = []
     @State private var newCategoryText = ""
+    @State private var incomeCategories: [String] = []
+    @State private var newIncomeCategoryText = ""
 
     var body: some View {
         Form {
-            Section("Categories") {
+            Section("Expense Categories") {
                 ForEach(categories, id: \.self) { cat in
                     HStack {
                         Text(cat)
@@ -159,10 +161,46 @@ struct CategoriesPane: View {
                 }
                 .foregroundStyle(.secondary)
             }
+
+            Section("Income Categories") {
+                ForEach(incomeCategories, id: \.self) { cat in
+                    HStack {
+                        Text(cat)
+                        Spacer()
+                        Button {
+                            incomeCategories.removeAll { $0 == cat }
+                            saveIncomeCategories(incomeCategories)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                HStack {
+                    TextField("New category", text: $newIncomeCategoryText)
+                    Button("Add") {
+                        let trimmed = newIncomeCategoryText.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty, !incomeCategories.contains(trimmed) else { return }
+                        incomeCategories.append(trimmed)
+                        saveIncomeCategories(incomeCategories)
+                        newIncomeCategoryText = ""
+                    }
+                    .disabled(newIncomeCategoryText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                Button("Restore Defaults") {
+                    incomeCategories = defaultIncomeCategories
+                    saveIncomeCategories(incomeCategories)
+                }
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { categories = loadCategories() }
+        .onAppear {
+            categories = loadCategories()
+            incomeCategories = loadIncomeCategories()
+        }
     }
 }
 
@@ -201,7 +239,7 @@ struct BackupPane: View {
             } header: {
                 Text("Backup")
             } footer: {
-                Text("Saves all data, documents, and settings. The API key is not included.")
+                Text("Saves all data, documents, and settings. Includes the API key.")
             }
 
             Section {
@@ -213,7 +251,7 @@ struct BackupPane: View {
             } header: {
                 Text("Restore")
             } footer: {
-                Text("Restores from a .akaunbackup file. The app will restart automatically. The API key is not affected.")
+                Text("Restores from a .akaunbackup file. The app will restart automatically.")
             }
         }
         .formStyle(.grouped)
@@ -349,7 +387,7 @@ struct ResetPane: View {
             Button("Reset Settings", role: .destructive) { resetSettings() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will restore the API key, model, max tokens, and expense categories to their defaults. This cannot be undone.")
+            Text("This will restore the API key, model, max tokens, and expense and income categories to their defaults. This cannot be undone.")
         }
         .confirmationDialog(
             "Reset Data?",
@@ -379,6 +417,7 @@ struct ResetPane: View {
         maxTokens    = 1024
         showFreeOnly = false
         saveCategories(defaultCategories)
+        saveIncomeCategories(defaultIncomeCategories)
     }
 
     private func resetData() {

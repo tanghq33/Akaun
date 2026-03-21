@@ -17,6 +17,9 @@ enum ClaimStatus: String, Codable, CaseIterable {
     @Relationship(deleteRule: .cascade, inverse: \Attachment.claim)
     var attachments: [Attachment] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \ClaimAttachment.claim)
+    var claimAttachments: [ClaimAttachment] = []
+
     var totalAmountCents: Int {
         expenses.reduce(0) { $0 + $1.amountCents }
     }

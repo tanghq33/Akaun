@@ -92,7 +92,7 @@ final class AutoImportQueue {
 
     func importItem(_ item: AutoImportQueueItem, in context: ModelContext) {
         do {
-            let filename = try DocumentStore.importFile(from: item.sourceFile)
+            let filename = try DocumentStore.importFile(from: item.sourceFile, subfolder: "Expenses")
             let displayName = DocumentStore.displayName(for: filename)
             let expense = Expense(
                 expenseNumber: RunningNumberGenerator.next(prefix: "EX", for: item.date, in: context),

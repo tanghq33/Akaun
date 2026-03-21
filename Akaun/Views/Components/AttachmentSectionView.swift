@@ -1,3 +1,5 @@
+import Quartz
+import QuickLookUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,28 +9,69 @@ struct AttachmentItem: Identifiable {
     var displayName: String
 }
 
+private struct AttachmentRowView: View {
+    let item: AttachmentItem
+    let index: Int
+    let allAttachments: [AttachmentItem]
+    let quickLookCoordinator: QuickLookCoordinator
+    let onRemove: (AttachmentItem) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack {
+            Button {
+                showPreview()
+            } label: {
+                Label(item.displayName, systemImage: "paperclip")
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Button {
+                showPreview()
+            } label: {
+                Image(systemName: "doc.viewfinder")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .opacity(isHovering ? 1 : 0)
+            Button("Remove", role: .destructive) {
+                onRemove(item)
+            }
+            .buttonStyle(.borderless)
+        }
+        .onHover { isHovering = $0 }
+    }
+
+    private func showPreview() {
+        let urls = allAttachments.map { DocumentStore.url(for: $0.filename) }
+        quickLookCoordinator.show(urls: urls, at: index)
+    }
+}
+
 struct AttachmentSectionView: View {
+    let subfolder: String
     @Binding var attachments: [AttachmentItem]
     /// Filenames that existed before this editing session — only these get deleted from disk on remove.
     let existingFilenames: Set<String>
     /// Tracks filenames added during this session for cleanup on cancel.
     @Binding var newFilenames: Set<String>
 
+    @State private var quickLookCoordinator = QuickLookCoordinator()
     @State private var showingFilePicker = false
     @State private var fileImportError: String?
     @State private var isDragTargeted = false
 
     var body: some View {
         Section("Attachments") {
-            ForEach(attachments) { item in
-                HStack {
-                    Label(item.displayName, systemImage: "paperclip")
-                    Spacer()
-                    Button("Remove", role: .destructive) {
-                        removeAttachment(item)
-                    }
-                    .buttonStyle(.borderless)
-                }
+            ForEach(Array(attachments.enumerated()), id: \.element.id) { index, item in
+                AttachmentRowView(
+                    item: item,
+                    index: index,
+                    allAttachments: attachments,
+                    quickLookCoordinator: quickLookCoordinator,
+                    onRemove: removeAttachment
+                )
             }
 
             ZStack {
@@ -84,7 +127,7 @@ struct AttachmentSectionView: View {
 
     private func attachURL(_ url: URL) {
         do {
-            let filename = try DocumentStore.importFile(from: url)
+            let filename = try DocumentStore.importFile(from: url, subfolder: subfolder)
             let display = DocumentStore.displayName(for: filename)
             attachments.append(AttachmentItem(filename: filename, displayName: display))
             newFilenames.insert(filename)

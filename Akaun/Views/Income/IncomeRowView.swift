@@ -5,22 +5,27 @@ struct IncomeRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(income.incomeNumber)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             HStack {
-                Text(Formatters.displayDate.string(from: income.date))
-                    .font(.body)
+                Text(income.incomeNumber)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(Formatters.formatCents(income.amountCents))
                     .font(.body)
                     .foregroundStyle(.green)
             }
-            if !income.remark.isEmpty {
-                Text(income.remark)
+            Text(income.descriptionText.isEmpty ? "Unnamed" : income.descriptionText)
+                .font(.body)
+            HStack {
+                Text(income.source.isEmpty ? Formatters.displayDate.string(from: income.date) : income.source)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Spacer()
+                if !income.category.isEmpty {
+                    Text(income.category)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 2)

@@ -21,6 +21,7 @@ struct ClaimConfirmationView: View {
                 }
 
                 AttachmentSectionView(
+                    subfolder: "Claims",
                     attachments: $attachments,
                     existingFilenames: [],
                     newFilenames: $newFilenames
@@ -48,8 +49,8 @@ struct ClaimConfirmationView: View {
         }
 
         for item in attachments {
-            let att = Attachment(filename: item.filename, displayName: item.displayName)
-            claim.attachments.append(att)
+            let att = ClaimAttachment(filename: item.filename, displayName: item.displayName)
+            claim.claimAttachments.append(att)
         }
 
         try? modelContext.save()

@@ -77,6 +77,7 @@ struct ExpenseFormView: View {
 
                 if !isLocked {
                     AttachmentSectionView(
+                        subfolder: "Expenses",
                         attachments: $attachments,
                         existingFilenames: existingFilenames,
                         newFilenames: $newFilenames

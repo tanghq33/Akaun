@@ -18,6 +18,7 @@ enum BackupService {
         let autoImportModel: String
         let autoImportMaxTokens: Int
         let autoImportShowFreeOnly: Bool
+        let autoImportApiKey: String
     }
 
     enum BackupError: LocalizedError {
@@ -127,7 +128,8 @@ enum BackupService {
             categories: ud.stringArray(forKey: "expense.categories") ?? [],
             autoImportModel: ud.string(forKey: "autoImport.model") ?? "",
             autoImportMaxTokens: ud.integer(forKey: "autoImport.maxTokens"),
-            autoImportShowFreeOnly: ud.bool(forKey: "autoImport.showFreeOnly")
+            autoImportShowFreeOnly: ud.bool(forKey: "autoImport.showFreeOnly"),
+            autoImportApiKey: ud.string(forKey: "autoImport.apiKey") ?? ""
         )
         let settingsData = try JSONEncoder().encode(settings)
         try settingsData.write(to: destinationURL.appendingPathComponent("settings.json"))
@@ -207,6 +209,7 @@ enum BackupService {
             ud.set(settings.autoImportModel, forKey: "autoImport.model")
             ud.set(settings.autoImportMaxTokens, forKey: "autoImport.maxTokens")
             ud.set(settings.autoImportShowFreeOnly, forKey: "autoImport.showFreeOnly")
+            ud.set(settings.autoImportApiKey, forKey: "autoImport.apiKey")
         }
 
         // Replace documents folder

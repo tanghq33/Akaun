@@ -92,16 +92,24 @@ struct DetailRow: View {
 }
 
 struct AttachmentListView: View {
-    let attachments: [Attachment]
-    /// Fallback legacy filename shown when attachments array is empty.
+    private let storedItems: [(filename: String, displayName: String)]
     var legacyFilename: String? = nil
 
     @State private var quickLookCoordinator = QuickLookCoordinator()
 
+    init(attachments: [Attachment], legacyFilename: String? = nil) {
+        self.storedItems = attachments.map { ($0.filename, $0.displayName) }
+        self.legacyFilename = legacyFilename
+    }
+
+    init(claimAttachments: [ClaimAttachment]) {
+        self.storedItems = claimAttachments.map { ($0.filename, $0.displayName) }
+    }
+
     var body: some View {
         let items: [(String, String)] = {
-            if !attachments.isEmpty {
-                return attachments.map { ($0.filename, $0.displayName) }
+            if !storedItems.isEmpty {
+                return storedItems.map { ($0.filename, $0.displayName) }
             } else if let legacy = legacyFilename {
                 return [(legacy, DocumentStore.displayName(for: legacy))]
             }
