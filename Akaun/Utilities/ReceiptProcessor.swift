@@ -38,9 +38,9 @@ private struct OpenRouterResult: Decodable {
 
 private let openRouterURL = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
-private func buildSystemPrompt(categories: [String]) -> String {
+private func buildSystemPrompt(categories: [String], hint: String? = nil) -> String {
     let categoryList = categories.joined(separator: ", ")
-    return """
+    var prompt = """
     You are a receipt data extraction assistant. Extract structured bookkeeping data from the provided receipt text.
 
     Return a JSON object with these fields:
@@ -53,6 +53,10 @@ private func buildSystemPrompt(categories: [String]) -> String {
 
     Be precise. Use exact values from the receipt. If a field cannot be determined, use an empty string.
     """
+    if let hint = hint, !hint.isEmpty {
+        prompt += "\n\n## Categorization Hints\n\(hint)"
+    }
+    return prompt
 }
 
 private func buildJsonSchema() -> [String: Any] {
@@ -178,11 +182,11 @@ private func performOCR(on cgImage: CGImage, continuation: CheckedContinuation<S
 
 // MARK: - OpenRouter API
 
-private func callOpenRouter(text: String, apiKey: String, model: String, maxTokens: Int, categories: [String]) async throws -> OpenRouterResult {
+private func callOpenRouter(text: String, apiKey: String, model: String, maxTokens: Int, categories: [String], hint: String? = nil) async throws -> OpenRouterResult {
     var payload: [String: Any] = [
         "model": model,
         "messages": [
-            ["role": "system", "content": buildSystemPrompt(categories: categories)],
+            ["role": "system", "content": buildSystemPrompt(categories: categories, hint: hint)],
             ["role": "user", "content": "Extract the receipt data from the following text:\n\n\(text)"],
         ],
         "response_format": [
@@ -355,6 +359,7 @@ func processSingleFile(
     model: String,
     maxTokens: Int,
     categories: [String] = [],
+    hint: String? = nil,
     onStateChange: @escaping (QueueItemState) -> Void
 ) async -> Result<ExtractedReceipt, Error> {
     let cats = categories.isEmpty ? loadCategories() : categories
@@ -366,7 +371,7 @@ func processSingleFile(
                 userInfo: [NSLocalizedDescriptionKey: "No text could be extracted from this file"]))
         }
         onStateChange(.calling)
-        let apiResult = try await callOpenRouter(text: text, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: cats)
+        let apiResult = try await callOpenRouter(text: text, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: cats, hint: hint)
         let receipt = ExtractedReceipt(
             itemName: apiResult.item,
             supplier: apiResult.supplier,

@@ -21,6 +21,11 @@ struct ExpenseRowView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if !expense.category.isEmpty {
+                    Text(expense.category)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 StatusBadge(text: expense.status.rawValue, color: statusColor(expense.status))
             }
         }

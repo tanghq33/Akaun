@@ -55,6 +55,11 @@ final class AutoImportQueue {
     }
 
     func enqueue(_ urls: [URL], apiKey: String, model: String, maxTokens: Int, categories: [String] = []) {
+        let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
+        let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
+        let hint = hintEnabled ? storedHint : nil
+
         for url in urls {
             let item = AutoImportQueueItem(sourceFile: url)
             items.append(item)
@@ -65,6 +70,7 @@ final class AutoImportQueue {
                     model: model,
                     maxTokens: maxTokens,
                     categories: categories,
+                    hint: hint,
                     onStateChange: { item.state = $0 }
                 )
                 apply(result, to: item)
@@ -73,6 +79,11 @@ final class AutoImportQueue {
     }
 
     func retryItem(_ item: AutoImportQueueItem, apiKey: String, model: String, maxTokens: Int, categories: [String] = []) {
+        let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
+        let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
+        let hint = hintEnabled ? storedHint : nil
+
         item.state = .extracting
         item.itemName = ""
         item.supplier = ""
@@ -84,6 +95,7 @@ final class AutoImportQueue {
                 model: model,
                 maxTokens: maxTokens,
                 categories: categories,
+                hint: hint,
                 onStateChange: { item.state = $0 }
             )
             apply(result, to: item)
@@ -122,6 +134,50 @@ final class AutoImportQueue {
 
     func clearCompleted() {
         items.removeAll { $0.state == .imported }
+    }
+
+    // MARK: - Categorization hint
+
+    func startupHintCheckIfNeeded(in context: ModelContext) async {
+        let apiKey = UserDefaults.standard.string(forKey: "autoImport.apiKey") ?? ""
+        guard !apiKey.isEmpty else { return }
+
+        let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
+        guard hintEnabled else { return }
+
+        guard let allExpenses = try? context.fetch(FetchDescriptor<Expense>()) else { return }
+        let count = allExpenses.count
+
+        let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint") ?? ""
+        let storedCount = UserDefaults.standard.integer(forKey: "autoImport.categorizationHintExpenseCount")
+
+        let shouldGenerate = storedHint.isEmpty ? count >= 5 : (count - storedCount) >= 10
+        guard shouldGenerate else { return }
+
+        let model = UserDefaults.standard.string(forKey: "autoImport.model")
+            ?? "qwen/qwen3-vl-235b-a22b-thinking"
+        let maxTokens = UserDefaults.standard.integer(forKey: "autoImport.maxTokens")
+        let categories = loadCategories()
+        let dataPoints = allExpenses
+            .filter { !$0.itemName.isEmpty }
+            .map { CategoryDataPoint(label: $0.itemName, category: $0.category) }
+
+        do {
+            let hint = try await generateCategorizationHint(
+                expenses:   dataPoints,
+                categories: categories,
+                apiKey:     apiKey,
+                model:      model,
+                maxTokens:  maxTokens
+            )
+            UserDefaults.standard.set(hint, forKey: "autoImport.categorizationHint")
+            UserDefaults.standard.set(count, forKey: "autoImport.categorizationHintExpenseCount")
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "autoImport.categorizationHintLastUpdated")
+            print("[AutoImportQueue] Categorization hint updated (\(count) expenses)")
+        } catch {
+            print("[AutoImportQueue] Hint generation failed: \(error)")
+        }
     }
 
     // MARK: - Private

@@ -42,6 +42,8 @@ struct AkaunApp: App {
                 .onAppear {
                     migrateDocumentFilenameToAttachments()
                     migrateAttachmentsToSubfolders()
+                    let ctx = sharedModelContainer.mainContext
+                    Task { await autoImportQueue.startupHintCheckIfNeeded(in: ctx) }
                 }
         }
         .modelContainer(sharedModelContainer)

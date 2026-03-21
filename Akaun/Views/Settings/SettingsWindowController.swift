@@ -23,8 +23,8 @@ final class SettingsWindowController: NSWindowController {
         tabVC.tabStyle = .toolbar
 
         let tabs: [(String, String, AnyView)] = [
-            ("Auto Import", "wand.and.stars", AnyView(AutoImportPane())),
-            ("Categories",  "tag",            AnyView(CategoriesPane())),
+            ("Intelligence", "sparkles",      AnyView(IntelligencePane())),
+            ("Categories",   "tag",           AnyView(CategoriesPane())),
             ("Backup",      "externaldrive.badge.timemachine", AnyView(BackupPane(modelContainer: modelContainer))),
             ("Reset",       "arrow.counterclockwise", AnyView(ResetPane())),
         ]
