@@ -24,6 +24,9 @@ struct IncomeFormView: View {
     @State private var existingFilenames: Set<String> = []
     @State private var newFilenames: Set<String> = []
 
+    @State private var showSaveError = false
+    @State private var saveErrorMessage = ""
+
     private var isEdit: Bool {
         if case .edit = mode { return true }
         return false
@@ -34,7 +37,7 @@ struct IncomeFormView: View {
             Form {
                 Section("Details") {
                     TextField("Description", text: $descriptionText)
-                    TextField("Source (payer)", text: $source)
+                    TextField("Source", text: $source)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     TextField("Amount (RM)", text: $amountString)
                         .onChange(of: amountString) { _, new in
@@ -71,6 +74,11 @@ struct IncomeFormView: View {
             }
         }
         .onAppear { populateIfEditing() }
+        .alert("Save Failed", isPresented: $showSaveError) {
+            Button("OK") {}
+        } message: {
+            Text(saveErrorMessage)
+        }
         .frame(minWidth: 480, minHeight: 500)
     }
 
@@ -109,7 +117,13 @@ struct IncomeFormView: View {
                 let att = IncomeAttachment(filename: item.filename, displayName: item.displayName)
                 income.attachments.append(att)
             }
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                saveErrorMessage = error.localizedDescription
+                showSaveError = true
+                return
+            }
 
         case .edit(let income):
             income.source = source

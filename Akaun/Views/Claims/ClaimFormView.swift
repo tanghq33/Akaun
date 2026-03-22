@@ -7,6 +7,8 @@ struct ClaimFormView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var date = Date.now
+    @State private var showSaveError = false
+    @State private var saveErrorMessage = ""
     @State private var selectedExpenseIDs: Set<PersistentIdentifier> = []
 
     @State private var attachments: [AttachmentItem] = []
@@ -122,6 +124,11 @@ struct ClaimFormView: View {
                 }
             }
         }
+        .alert("Save Failed", isPresented: $showSaveError) {
+            Button("OK") {}
+        } message: {
+            Text(saveErrorMessage)
+        }
         .frame(minWidth: 500, minHeight: 500)
     }
 
@@ -148,7 +155,13 @@ struct ClaimFormView: View {
             claim.claimAttachments.append(att)
         }
 
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+            showSaveError = true
+            return
+        }
         dismiss()
     }
 

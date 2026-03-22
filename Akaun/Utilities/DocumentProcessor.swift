@@ -11,47 +11,69 @@ enum ImportState: Equatable {
     case failed(String)
 }
 
-struct ExtractedReceipt: Identifiable {
+enum DocumentType: String, Codable {
+    case expense
+    case income
+}
+
+struct ExtractedDocument: Identifiable {
     var id = UUID()
     var itemName: String
-    var supplier: String
+    var correspondent: String
     var dateString: String
     var date: Date
     var amountString: String
     var amountCents: Int
     var reference: String
     var category: String
+    var documentType: DocumentType
     var sourceFile: URL
     var importState: ImportState = .pending
 }
 
 private struct OpenRouterResult: Decodable {
     var item: String
-    var supplier: String
+    var correspondent: String
     var date: String
     var amount: String
     var reference: String
     var category: String
+    var document_type: String
 }
 
 // MARK: - Constants
 
 private let openRouterURL = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
-private func buildSystemPrompt(categories: [String], hint: String? = nil) -> String {
-    let categoryList = categories.joined(separator: ", ")
+/// Average characters per PDF page below which the document is treated as scanned and OCR is applied.
+private let scannedPdfCharThreshold: Double = 50
+
+private func buildSystemPrompt(expenseCategories: [String], incomeCategories: [String], hint: String? = nil) -> String {
+    let expCategoryList = expenseCategories.joined(separator: ", ")
+    let incCategoryList = incomeCategories.joined(separator: ", ")
     var prompt = """
-    You are a receipt data extraction assistant. Extract structured bookkeeping data from the provided receipt text.
+    You are a financial document data extraction assistant. Documents may be either expense receipts (money paid out) or income invoices/payment confirmations (money received).
+
+    First, classify the document:
+    - "expense" — the document records a purchase, payment made, or cost incurred
+    - "income"  — the document records a sale, invoice issued, or payment received
 
     Return a JSON object with these fields:
-    - item: string (what was purchased, always keep it short and human-readable — aim for under 40 characters total; for 1–2 items use a concise name like "Kopi O, Kaya Toast" or "Nike Air Max"; for 3+ items or when individual names would be too long, use a brief summary like "Groceries", "Team lunch", "Flight SIN→KUL"; include brand only when it's meaningful, e.g. "Apple AirPods", skip brand for generic items like "Office supplies")
-    - supplier: string (vendor / store / merchant name; look for it at the top of the receipt or invoice — it is usually the first prominent name, often followed by a legal suffix like Sdn Bhd, Bhd, Corporation, Corp, Inc, Ltd, LLC, Enterprise, Enterprises, Trading, or a registration number; use the full legal name as printed, e.g. "Grid System Marketing Sdn Bhd", "Sunrise Trading Enterprise")
-    - date: string (YYYY-MM-DD format of the payment date or order date; if multiple dates appear on the receipt, prefer the payment/transaction date; empty string if unknown)
-    - amount: string (total amount paid including currency symbol, e.g. "SGD 42.50", "USD 9.99"; use empty string if unknown)
-    - reference: string (invoice number, receipt number, order ID, or any reference identifier on the receipt; empty string if none)
-    - category: string (expense category — must be exactly one of: \(categoryList); choose the closest match, default to "Other")
+    - document_type: string (must be exactly "expense" or "income")
+    - item: string (description of the transaction — for expenses: what was purchased; for income: what service/product was invoiced; aim for under 40 characters; for 1–2 items use a concise name like "Kopi O, Kaya Toast"; for 3+ items use a brief summary like "Groceries" or "Web Design Services")
+    - correspondent: string (the counterparty — vendor/merchant name for expenses, customer/payer name for income; use the full legal name as printed, e.g. "Grid System Marketing Sdn Bhd", "Sunrise Trading Enterprise")
+    - date: string (a SINGLE date in YYYY-MM-DD format — never list multiple dates; for a payment receipt or invoice use the payment/invoice date; for a statement covering a date range use the period end date, e.g. for "2026-01-01 to 2026-01-31" return "2026-01-31"; for a transaction history use the most recent transaction date; return empty string if no single date can be determined)
+    - amount: string (total amount paid/received including currency symbol, e.g. "RM 1200.00", "SGD 42.50"; use empty string if unknown)
+    - reference: string (invoice number, receipt number, order ID, or any reference identifier; empty string if none)
+    - category: string (choose from the correct list below based on document_type)
 
-    Be precise. Use exact values from the receipt. If a field cannot be determined, use an empty string.
+    Expense categories (use when document_type is "expense"):
+    \(expCategoryList)
+
+    Income categories (use when document_type is "income"):
+    \(incCategoryList)
+
+    Be precise. Use exact values from the document. If a field cannot be determined, use an empty string.
     """
     if let hint = hint, !hint.isEmpty {
         prompt += "\n\n## Categorization Hints\n\(hint)"
@@ -61,19 +83,20 @@ private func buildSystemPrompt(categories: [String], hint: String? = nil) -> Str
 
 private func buildJsonSchema() -> [String: Any] {
     [
-        "name": "receipt_data",
+        "name": "document_data",
         "strict": true,
         "schema": [
             "type": "object",
             "properties": [
-                "item":      ["type": "string"],
-                "supplier":  ["type": "string"],
-                "date":      ["type": "string"],
-                "amount":    ["type": "string"],
-                "reference": ["type": "string"],
-                "category":  ["type": "string"],
+                "document_type": ["type": "string"],
+                "item":          ["type": "string"],
+                "correspondent": ["type": "string"],
+                "date":          ["type": "string"],
+                "amount":        ["type": "string"],
+                "reference":     ["type": "string"],
+                "category":      ["type": "string"],
             ],
-            "required": ["item", "supplier", "date", "amount", "reference", "category"],
+            "required": ["document_type", "item", "correspondent", "date", "amount", "reference", "category"],
             "additionalProperties": false,
         ] as [String: Any],
     ]
@@ -92,14 +115,14 @@ func extractText(from url: URL) async throws -> String {
     case "png", "jpg", "jpeg":
         return try await extractTextFromImage(url: url)
     default:
-        throw NSError(domain: "ReceiptProcessor", code: 1,
+        throw NSError(domain: "DocumentProcessor", code: 1,
             userInfo: [NSLocalizedDescriptionKey: "Unsupported file type: \(ext)"])
     }
 }
 
 private func extractTextFromPDF(url: URL) async throws -> String {
     guard let doc = PDFDocument(url: url) else {
-        throw NSError(domain: "ReceiptProcessor", code: 2,
+        throw NSError(domain: "DocumentProcessor", code: 2,
             userInfo: [NSLocalizedDescriptionKey: "Failed to open PDF: \(url.lastPathComponent)"])
     }
 
@@ -111,7 +134,7 @@ private func extractTextFromPDF(url: URL) async throws -> String {
     let totalChars = pageTexts.reduce(0) { $0 + $1.count }
     let avgChars = doc.pageCount > 0 ? Double(totalChars) / Double(doc.pageCount) : 0
 
-    if avgChars < 50, doc.pageCount > 0 {
+    if avgChars < scannedPdfCharThreshold, doc.pageCount > 0 {
         // Scanned PDF — render and OCR each page
         var ocrTexts: [String] = []
         for i in 0..<doc.pageCount {
@@ -134,7 +157,7 @@ private func ocrPDFPage(_ page: PDFPage) async throws -> String {
         DispatchQueue.global(qos: .userInitiated).async {
             let nsImage = page.thumbnail(of: pixelSize, for: .mediaBox)
             guard let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                continuation.resume(throwing: NSError(domain: "ReceiptProcessor", code: 3,
+                continuation.resume(throwing: NSError(domain: "DocumentProcessor", code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "Failed to render PDF page to image"]))
                 return
             }
@@ -146,7 +169,7 @@ private func ocrPDFPage(_ page: PDFPage) async throws -> String {
 private func extractTextFromImage(url: URL) async throws -> String {
     guard let nsImage = NSImage(contentsOf: url),
           let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-        throw NSError(domain: "ReceiptProcessor", code: 4,
+        throw NSError(domain: "DocumentProcessor", code: 4,
             userInfo: [NSLocalizedDescriptionKey: "Failed to load image: \(url.lastPathComponent)"])
     }
     return try await recognizeText(in: cgImage)
@@ -182,12 +205,20 @@ private func performOCR(on cgImage: CGImage, continuation: CheckedContinuation<S
 
 // MARK: - OpenRouter API
 
-private func callOpenRouter(text: String, apiKey: String, model: String, maxTokens: Int, categories: [String], hint: String? = nil) async throws -> OpenRouterResult {
+private func callOpenRouter(
+    text: String,
+    apiKey: String,
+    model: String,
+    maxTokens: Int,
+    expenseCategories: [String],
+    incomeCategories: [String],
+    hint: String? = nil
+) async throws -> OpenRouterResult {
     var payload: [String: Any] = [
         "model": model,
         "messages": [
-            ["role": "system", "content": buildSystemPrompt(categories: categories, hint: hint)],
-            ["role": "user", "content": "Extract the receipt data from the following text:\n\n\(text)"],
+            ["role": "system", "content": buildSystemPrompt(expenseCategories: expenseCategories, incomeCategories: incomeCategories, hint: hint)],
+            ["role": "user", "content": "Extract the document data from the following text:\n\n\(text)"],
         ],
         "response_format": [
             "type": "json_schema",
@@ -198,10 +229,12 @@ private func callOpenRouter(text: String, apiKey: String, model: String, maxToke
         payload["max_tokens"] = maxTokens
     }
 
+    #if DEBUG
     if let prettyData = try? JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted),
        let prettyStr = String(data: prettyData, encoding: .utf8) {
-        print("[ReceiptProcessor] Request payload:\n\(prettyStr)")
+        print("[DocumentProcessor] Request payload:\n\(prettyStr)")
     }
+    #endif
 
     var urlRequest = URLRequest(url: openRouterURL)
     urlRequest.httpMethod = "POST"
@@ -210,7 +243,7 @@ private func callOpenRouter(text: String, apiKey: String, model: String, maxToke
     urlRequest.httpBody = try JSONSerialization.data(withJSONObject: payload)
     urlRequest.timeoutInterval = 60
 
-    var lastError: Error = NSError(domain: "ReceiptProcessor", code: 5,
+    var lastError: Error = NSError(domain: "DocumentProcessor", code: 5,
         userInfo: [NSLocalizedDescriptionKey: "Failed after 3 attempts"])
 
     for attempt in 0..<3 {
@@ -225,15 +258,17 @@ private func callOpenRouter(text: String, apiKey: String, model: String, maxToke
         do {
             let (data, response) = try await URLSession.shared.data(for: urlRequest)
             guard let http = response as? HTTPURLResponse else {
-                lastError = NSError(domain: "ReceiptProcessor", code: 6,
+                lastError = NSError(domain: "DocumentProcessor", code: 6,
                     userInfo: [NSLocalizedDescriptionKey: "Non-HTTP response"])
                 continue
             }
             responseData = data
             statusCode = http.statusCode
+            #if DEBUG
             if let requestId = http.value(forHTTPHeaderField: "x-request-id") {
-                print("[ReceiptProcessor] x-request-id: \(requestId)")
+                print("[DocumentProcessor] x-request-id: \(requestId)")
             }
+            #endif
         } catch {
             lastError = error
             continue
@@ -248,21 +283,27 @@ private func callOpenRouter(text: String, apiKey: String, model: String, maxToke
                   let message = first["message"] as? [String: Any],
                   let content = message["content"] as? String,
                   let contentData = content.data(using: .utf8) else {
-                throw NSError(domain: "ReceiptProcessor", code: 7,
+                throw NSError(domain: "DocumentProcessor", code: 7,
                     userInfo: [NSLocalizedDescriptionKey: "Unexpected API response structure"])
             }
             let result = try JSONDecoder().decode(OpenRouterResult.self, from: contentData)
-            print("[ReceiptProcessor] Extracted — item: \"\(result.item)\" supplier: \"\(result.supplier)\" date: \"\(result.date)\" amount: \"\(result.amount)\" ref: \"\(result.reference)\" category: \"\(result.category)\"")
+            #if DEBUG
+            print("[DocumentProcessor] Extracted — type: \"\(result.document_type)\" item: \"\(result.item)\" correspondent: \"\(result.correspondent)\" date: \"\(result.date)\" amount: \"\(result.amount)\" ref: \"\(result.reference)\" category: \"\(result.category)\"")
+            #endif
             return result
         } else if [429, 500, 502, 503, 504].contains(statusCode) {
             let body = String(data: data, encoding: .utf8) ?? ""
-            print("[ReceiptProcessor] HTTP \(statusCode) (attempt \(attempt + 1)): \(body)")
-            lastError = NSError(domain: "ReceiptProcessor", code: statusCode,
+            #if DEBUG
+            print("[DocumentProcessor] HTTP \(statusCode) (attempt \(attempt + 1)): \(body)")
+            #endif
+            lastError = NSError(domain: "DocumentProcessor", code: statusCode,
                 userInfo: [NSLocalizedDescriptionKey: "HTTP \(statusCode): \(String(body.prefix(300)))"])
         } else {
             let body = String(data: data, encoding: .utf8) ?? ""
-            print("[ReceiptProcessor] HTTP \(statusCode): \(body)")
-            throw NSError(domain: "ReceiptProcessor", code: statusCode,
+            #if DEBUG
+            print("[DocumentProcessor] HTTP \(statusCode): \(body)")
+            #endif
+            throw NSError(domain: "DocumentProcessor", code: statusCode,
                 userInfo: [NSLocalizedDescriptionKey: "API error \(statusCode): \(String(body.prefix(500)))"])
         }
     }
@@ -282,29 +323,48 @@ func parseAmountCents(_ amountString: String) -> Int {
     return Int((value * 100).rounded())
 }
 
-private let isoDateFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    return f
+private let dateFormatters: [DateFormatter] = {
+    let formats = [
+        "yyyy-MM-dd",    // 2026-02-22  ← primary (ISO 8601, what AI is asked for)
+        "yyyy/MM/dd",    // 2026/02/22
+        "dd/MM/yyyy",    // 22/02/2026
+        "MM/dd/yyyy",    // 02/22/2026
+        "d MMM yyyy",    // 22 Feb 2026
+        "d MMMM yyyy",   // 22 February 2026
+        "MMM d, yyyy",   // Feb 22, 2026
+        "MMMM d, yyyy",  // February 22, 2026
+    ]
+    return formats.map {
+        let f = DateFormatter()
+        f.dateFormat = $0
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }
 }()
 
 func parseReceiptDate(_ dateString: String) -> Date {
-    isoDateFormatter.date(from: dateString) ?? .now
+    let trimmed = dateString.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return .now }
+    for f in dateFormatters {
+        if let date = f.date(from: trimmed) { return date }
+    }
+    return .now
 }
 
 // MARK: - Top-Level Processing
 
-func processReceipts(
+func processDocuments(
     urls: [URL],
     apiKey: String,
     model: String,
     maxTokens: Int,
-    categories: [String] = [],
+    expenseCategories: [String] = [],
+    incomeCategories: [String] = [],
     progress: @escaping (Int, Int) -> Void
-) async -> [ExtractedReceipt] {
-    let cats = categories.isEmpty ? loadCategories() : categories
-    var results: [ExtractedReceipt] = []
+) async -> [ExtractedDocument] {
+    let expCats = expenseCategories.isEmpty ? loadCategories() : expenseCategories
+    let incCats = incomeCategories.isEmpty ? loadIncomeCategories() : incomeCategories
+    var results: [ExtractedDocument] = []
     let total = urls.count
 
     for (index, url) in urls.enumerated() {
@@ -313,36 +373,41 @@ func processReceipts(
         do {
             let text = try await extractText(from: url)
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                results.append(ExtractedReceipt(
-                    itemName: url.lastPathComponent, supplier: "", dateString: "",
+                results.append(ExtractedDocument(
+                    itemName: url.lastPathComponent, correspondent: "", dateString: "",
                     date: .now, amountString: "", amountCents: 0, reference: "",
-                    category: "Other", sourceFile: url,
+                    category: "Other", documentType: .expense, sourceFile: url,
                     importState: .failed("No text extracted from file")
                 ))
                 continue
             }
 
-            let apiResult = try await callOpenRouter(text: text, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: cats)
+            let apiResult = try await callOpenRouter(
+                text: text, apiKey: apiKey, model: model, maxTokens: maxTokens,
+                expenseCategories: expCats, incomeCategories: incCats
+            )
             let parsedDate = parseReceiptDate(apiResult.date)
             let cents = parseAmountCents(apiResult.amount)
+            let docType = DocumentType(rawValue: apiResult.document_type) ?? .expense
 
-            results.append(ExtractedReceipt(
+            results.append(ExtractedDocument(
                 itemName: apiResult.item,
-                supplier: apiResult.supplier,
+                correspondent: apiResult.correspondent,
                 dateString: apiResult.date,
                 date: parsedDate,
                 amountString: apiResult.amount,
                 amountCents: cents,
                 reference: apiResult.reference,
                 category: apiResult.category,
+                documentType: docType,
                 sourceFile: url,
                 importState: .pending
             ))
         } catch {
-            results.append(ExtractedReceipt(
-                itemName: url.lastPathComponent, supplier: "", dateString: "",
+            results.append(ExtractedDocument(
+                itemName: url.lastPathComponent, correspondent: "", dateString: "",
                 date: .now, amountString: "", amountCents: 0, reference: "",
-                category: "Other", sourceFile: url,
+                category: "Other", documentType: .expense, sourceFile: url,
                 importState: .failed(error.localizedDescription)
             ))
         }
@@ -358,33 +423,40 @@ func processSingleFile(
     apiKey: String,
     model: String,
     maxTokens: Int,
-    categories: [String] = [],
+    expenseCategories: [String] = [],
+    incomeCategories: [String] = [],
     hint: String? = nil,
     onStateChange: @escaping (QueueItemState) -> Void
-) async -> Result<ExtractedReceipt, Error> {
-    let cats = categories.isEmpty ? loadCategories() : categories
+) async -> Result<ExtractedDocument, Error> {
+    let expCats = expenseCategories.isEmpty ? loadCategories() : expenseCategories
+    let incCats = incomeCategories.isEmpty ? loadIncomeCategories() : incomeCategories
     onStateChange(.extracting)
     do {
         let text = try await extractText(from: url)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .failure(NSError(domain: "ReceiptProcessor", code: 8,
+            return .failure(NSError(domain: "DocumentProcessor", code: 8,
                 userInfo: [NSLocalizedDescriptionKey: "No text could be extracted from this file"]))
         }
         onStateChange(.calling)
-        let apiResult = try await callOpenRouter(text: text, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: cats, hint: hint)
-        let receipt = ExtractedReceipt(
+        let apiResult = try await callOpenRouter(
+            text: text, apiKey: apiKey, model: model, maxTokens: maxTokens,
+            expenseCategories: expCats, incomeCategories: incCats, hint: hint
+        )
+        let docType = DocumentType(rawValue: apiResult.document_type) ?? .expense
+        let document = ExtractedDocument(
             itemName: apiResult.item,
-            supplier: apiResult.supplier,
+            correspondent: apiResult.correspondent,
             dateString: apiResult.date,
             date: parseReceiptDate(apiResult.date),
             amountString: apiResult.amount,
             amountCents: parseAmountCents(apiResult.amount),
             reference: apiResult.reference,
             category: apiResult.category,
+            documentType: docType,
             sourceFile: url,
             importState: .pending
         )
-        return .success(receipt)
+        return .success(document)
     } catch {
         return .failure(error)
     }

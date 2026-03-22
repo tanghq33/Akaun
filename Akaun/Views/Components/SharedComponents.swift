@@ -45,34 +45,37 @@ struct StatusBadge: View {
 }
 
 struct WideDatePicker: NSViewRepresentable {
-    @Binding var selection: Date
+    var selection: Date
+    var onDateChanged: (Date) -> Void
 
     func makeNSView(context: Context) -> NSDatePicker {
         let picker = NSDatePicker()
-        picker.datePickerStyle = .textFieldAndStepper
+        picker.datePickerStyle = .textField
+        picker.presentsCalendarOverlay = true
         picker.datePickerElements = .yearMonthDay
         picker.dateValue = selection
         picker.target = context.coordinator
         picker.action = #selector(Coordinator.dateChanged(_:))
         picker.translatesAutoresizingMaskIntoConstraints = false
-        picker.widthAnchor.constraint(greaterThanOrEqualToConstant: 130).isActive = true
+        picker.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         picker.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         return picker
     }
 
     func updateNSView(_ picker: NSDatePicker, context: Context) {
         picker.dateValue = selection
+        context.coordinator.onDateChanged = onDateChanged
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
+        Coordinator(onDateChanged: onDateChanged)
     }
 
     final class Coordinator {
-        var selection: Binding<Date>
-        init(selection: Binding<Date>) { self.selection = selection }
+        var onDateChanged: (Date) -> Void
+        init(onDateChanged: @escaping (Date) -> Void) { self.onDateChanged = onDateChanged }
         @objc func dateChanged(_ sender: NSDatePicker) {
-            selection.wrappedValue = sender.dateValue
+            onDateChanged(sender.dateValue)
         }
     }
 }

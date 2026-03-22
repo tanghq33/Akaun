@@ -18,6 +18,7 @@ final class AutoImportQueueItem: Identifiable {
     let id = UUID()
     let sourceFile: URL
     var state: QueueItemState = .extracting
+    var documentType: DocumentType = .expense
     var itemName: String = ""
     var supplier: String = ""
     var date: Date = .now
@@ -54,7 +55,14 @@ final class AutoImportQueue {
         items.removeAll { $0.id == item.id }
     }
 
-    func enqueue(_ urls: [URL], apiKey: String, model: String, maxTokens: Int, categories: [String] = []) {
+    func enqueue(
+        _ urls: [URL],
+        apiKey: String,
+        model: String,
+        maxTokens: Int,
+        expenseCategories: [String] = [],
+        incomeCategories: [String] = []
+    ) {
         let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
         let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
             ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
@@ -69,7 +77,8 @@ final class AutoImportQueue {
                     apiKey: apiKey,
                     model: model,
                     maxTokens: maxTokens,
-                    categories: categories,
+                    expenseCategories: expenseCategories,
+                    incomeCategories: incomeCategories,
                     hint: hint,
                     onStateChange: { item.state = $0 }
                 )
@@ -78,13 +87,21 @@ final class AutoImportQueue {
         }
     }
 
-    func retryItem(_ item: AutoImportQueueItem, apiKey: String, model: String, maxTokens: Int, categories: [String] = []) {
+    func retryItem(
+        _ item: AutoImportQueueItem,
+        apiKey: String,
+        model: String,
+        maxTokens: Int,
+        expenseCategories: [String] = [],
+        incomeCategories: [String] = []
+    ) {
         let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
         let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
             ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
         let hint = hintEnabled ? storedHint : nil
 
         item.state = .extracting
+        item.documentType = .expense
         item.itemName = ""
         item.supplier = ""
         item.category = "Other"
@@ -94,7 +111,8 @@ final class AutoImportQueue {
                 apiKey: apiKey,
                 model: model,
                 maxTokens: maxTokens,
-                categories: categories,
+                expenseCategories: expenseCategories,
+                incomeCategories: incomeCategories,
                 hint: hint,
                 onStateChange: { item.state = $0 }
             )
@@ -104,22 +122,42 @@ final class AutoImportQueue {
 
     func importItem(_ item: AutoImportQueueItem, in context: ModelContext) {
         do {
-            let filename = try DocumentStore.importFile(from: item.sourceFile, subfolder: "Expenses")
-            let displayName = DocumentStore.displayName(for: filename)
-            let expense = Expense(
-                expenseNumber: RunningNumberGenerator.next(prefix: "EX", for: item.date, in: context),
-                itemName: item.itemName,
-                supplier: item.supplier,
-                date: item.date,
-                amountCents: item.amountCents,
-                reference: item.reference,
-                status: item.status,
-                category: item.category
-            )
-            context.insert(expense)
-            let attachment = Attachment(filename: filename, displayName: displayName, addedDate: item.date)
-            expense.attachments.append(attachment)
-            try? context.save()
+            switch item.documentType {
+            case .expense:
+                let filename = try DocumentStore.importFile(from: item.sourceFile, subfolder: "Expenses")
+                let displayName = DocumentStore.displayName(for: filename)
+                let expense = Expense(
+                    expenseNumber: RunningNumberGenerator.next(prefix: "EX", for: item.date, in: context),
+                    itemName: item.itemName,
+                    supplier: item.supplier,
+                    date: item.date,
+                    amountCents: item.amountCents,
+                    reference: item.reference,
+                    status: item.status,
+                    category: item.category
+                )
+                context.insert(expense)
+                let attachment = Attachment(filename: filename, displayName: displayName, addedDate: item.date)
+                expense.attachments.append(attachment)
+
+            case .income:
+                let filename = try DocumentStore.importFile(from: item.sourceFile, subfolder: "Income")
+                let displayName = DocumentStore.displayName(for: filename)
+                let income = Income(
+                    incomeNumber: RunningNumberGenerator.next(prefix: "IN", for: item.date, in: context),
+                    source: item.supplier,
+                    descriptionText: item.itemName,
+                    date: item.date,
+                    amountCents: item.amountCents,
+                    reference: item.reference,
+                    category: item.category
+                )
+                context.insert(income)
+                let attachment = IncomeAttachment(filename: filename, displayName: displayName, addedDate: item.date)
+                income.attachments.append(attachment)
+            }
+
+            try context.save()
             item.state = .imported
         } catch {
             item.state = .failed(error.localizedDescription)
@@ -174,23 +212,28 @@ final class AutoImportQueue {
             UserDefaults.standard.set(hint, forKey: "autoImport.categorizationHint")
             UserDefaults.standard.set(count, forKey: "autoImport.categorizationHintExpenseCount")
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "autoImport.categorizationHintLastUpdated")
+            #if DEBUG
             print("[AutoImportQueue] Categorization hint updated (\(count) expenses)")
+            #endif
         } catch {
+            #if DEBUG
             print("[AutoImportQueue] Hint generation failed: \(error)")
+            #endif
         }
     }
 
     // MARK: - Private
 
-    private func apply(_ result: Result<ExtractedReceipt, Error>, to item: AutoImportQueueItem) {
+    private func apply(_ result: Result<ExtractedDocument, Error>, to item: AutoImportQueueItem) {
         switch result {
-        case .success(let receipt):
-            item.itemName = receipt.itemName
-            item.supplier = receipt.supplier
-            item.date = receipt.date
-            item.amountCents = receipt.amountCents
-            item.reference = receipt.reference
-            item.category = receipt.category
+        case .success(let document):
+            item.documentType = document.documentType
+            item.itemName = document.itemName
+            item.supplier = document.correspondent
+            item.date = document.date
+            item.amountCents = document.amountCents
+            item.reference = document.reference
+            item.category = document.category
             item.state = .ready
         case .failure(let error):
             item.state = .failed(error.localizedDescription)

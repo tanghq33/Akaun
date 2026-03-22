@@ -17,6 +17,7 @@ struct ClaimDetailView: View {
     var body: some View {
         Group {
             if let claim {
+                let sortedExpenses = claim.expenses.sorted { $0.date < $1.date }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         HStack {
@@ -48,7 +49,7 @@ struct ClaimDetailView: View {
                         Text("Expenses (\(claim.expenses.count))")
                             .font(.headline)
 
-                        ForEach(claim.expenses.sorted(by: { $0.date < $1.date })) { expense in
+                        ForEach(sortedExpenses) { expense in
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(expense.itemName.isEmpty ? "Unnamed" : expense.itemName)

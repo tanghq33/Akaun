@@ -224,7 +224,9 @@ private func callOpenRouterForCategory(payload: [String: Any], apiKey: String) a
             return contentData
         } else if [429, 500, 502, 503, 504].contains(statusCode) {
             let body = String(data: data, encoding: .utf8) ?? ""
+            #if DEBUG
             print("[CategoryLearner] HTTP \(statusCode) (attempt \(attempt + 1)): \(body)")
+            #endif
             lastError = NSError(domain: "CategoryLearner", code: statusCode,
                 userInfo: [NSLocalizedDescriptionKey: "HTTP \(statusCode)"])
         } else {

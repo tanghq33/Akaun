@@ -81,22 +81,33 @@ struct CashFlowChartView: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if isHovering, let label = selectedLabel,
-                   let item = chartData.first(where: { $0.label == label }),
-                   item.hasData {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(label)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text("Net: \(Formatters.formatCents(item.netCents))")
-                            .font(.caption)
-                            .foregroundStyle(item.netCents >= 0 ? .primary : Color.red)
+                GeometryReader { proxy in
+                    if isHovering, let label = selectedLabel,
+                       let item = chartData.first(where: { $0.label == label }),
+                       item.hasData {
+                        let tooltipWidth: CGFloat = 160
+                        let tooltipHeight: CGFloat = 52
+                        let margin: CGFloat = 12
+                        let xOffset = cursorLocation.x + margin + tooltipWidth > proxy.size.width
+                            ? cursorLocation.x - margin - tooltipWidth
+                            : cursorLocation.x + margin
+                        let yOffset = cursorLocation.y - tooltipHeight < 0
+                            ? cursorLocation.y + margin
+                            : cursorLocation.y - tooltipHeight
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("Net: \(Formatters.formatCents(item.netCents))")
+                                .font(.caption)
+                                .foregroundStyle(item.netCents >= 0 ? .primary : Color.red)
+                        }
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .shadow(radius: 4)
+                        .offset(x: xOffset, y: yOffset)
+                        .allowsHitTesting(false)
                     }
-                    .padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .shadow(radius: 4)
-                    .offset(x: cursorLocation.x + 12, y: cursorLocation.y - 40)
-                    .allowsHitTesting(false)
                 }
             }
             .clipped()

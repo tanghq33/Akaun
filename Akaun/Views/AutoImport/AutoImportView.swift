@@ -18,19 +18,29 @@ struct AutoImportView: View {
             if queue.processingItems.isEmpty {
                 emptyDropZone
             } else {
-                List {
-                    Section {
-                        compactDropZone
-                    }
-                    ForEach(queue.processingItems) { item in
-                        AutoImportQueueRowView(item: item) {
-                            queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens)
-                        } onRemove: {
-                            queue.removeItem(item)
+                ZStack {
+                    List {
+                        Section {
+                            compactDropZone
+                        }
+                        ForEach(queue.processingItems) { item in
+                            AutoImportQueueRowView(item: item) {
+                                queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens, expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
+                            } onRemove: {
+                                queue.removeItem(item)
+                            }
                         }
                     }
+                    .listStyle(.plain)
+
+                    if isDragTargeted {
+                        dropOverlay
+                    }
                 }
-                .listStyle(.plain)
+                .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+                    Task { await handleDrop(providers: providers) }
+                    return true
+                }
             }
         }
         .navigationTitle("Auto Import")
@@ -41,7 +51,7 @@ struct AutoImportView: View {
         ) { result in
             if case .success(let urls) = result {
                 let filtered = urls.filter { isSupportedFile($0) }
-                queue.enqueue(filtered, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: loadCategories())
+                queue.enqueue(filtered, apiKey: apiKey, model: model, maxTokens: maxTokens, expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
             }
         }
     }
@@ -65,7 +75,7 @@ struct AutoImportView: View {
                     Image(systemName: "tray.and.arrow.down")
                         .font(.system(size: 48))
                         .foregroundStyle(isDragTargeted ? Color.accentColor : Color.secondary)
-                    Text("Drop receipts here")
+                    Text("Drop receipts & invoices here")
                         .font(.title2)
                         .fontWeight(.medium)
                     Text("PDF, PNG, JPG — multiple files supported")
@@ -78,13 +88,14 @@ struct AutoImportView: View {
                 .padding(40)
             }
             .frame(maxWidth: 480, maxHeight: 300)
-            .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
-                Task { await handleDrop(providers: providers) }
-                return true
-            }
             Spacer()
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            Task { await handleDrop(providers: providers) }
+            return true
+        }
     }
 
     private var compactDropZone: some View {
@@ -101,7 +112,7 @@ struct AutoImportView: View {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down")
                     .foregroundStyle(isDragTargeted ? Color.accentColor : Color.secondary)
-                Text("Drop more receipts…")
+                Text("Drop more files…")
                     .font(.subheadline)
                     .foregroundStyle(isDragTargeted ? Color.accentColor : Color.secondary)
                 Spacer()
@@ -114,10 +125,24 @@ struct AutoImportView: View {
         .frame(height: 40)
         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8))
         .listRowSeparator(.hidden)
-        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
-            Task { await handleDrop(providers: providers) }
-            return true
+    }
+
+    private var dropOverlay: some View {
+        ZStack {
+            Color.accentColor.opacity(0.08)
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                .padding(8)
+            VStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Color.accentColor)
+                Text("Drop files to add to queue")
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
+            }
         }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Helpers
@@ -130,7 +155,7 @@ struct AutoImportView: View {
             }
         }
         if !urls.isEmpty {
-            queue.enqueue(urls, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: loadCategories())
+            queue.enqueue(urls, apiKey: apiKey, model: model, maxTokens: maxTokens, expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
         }
     }
 

@@ -57,11 +57,20 @@ struct MonthlyTrendChartView: View {
     }
 
     @ViewBuilder
-    private var tooltipView: some View {
+    private func tooltipView(in proxy: GeometryProxy) -> some View {
         if isHovering, let label = selectedLabel,
            let incomeItem = chartData.first(where: { $0.label == label && $0.series == "Income" }),
            let expenseItem = chartData.first(where: { $0.label == label && $0.series == "Expenses" }),
            incomeItem.amountCents > 0 || expenseItem.amountCents > 0 {
+            let tooltipWidth: CGFloat = 190
+            let tooltipHeight: CGFloat = 68
+            let margin: CGFloat = 12
+            let xOffset = cursorLocation.x + margin + tooltipWidth > proxy.size.width
+                ? cursorLocation.x - margin - tooltipWidth
+                : cursorLocation.x + margin
+            let yOffset = cursorLocation.y - tooltipHeight < 0
+                ? cursorLocation.y + margin
+                : cursorLocation.y - tooltipHeight
             VStack(alignment: .leading, spacing: 4) {
                 Text(label)
                     .font(.caption2)
@@ -80,7 +89,7 @@ struct MonthlyTrendChartView: View {
             .padding(8)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             .shadow(radius: 4)
-            .offset(x: cursorLocation.x + 12, y: cursorLocation.y - 40)
+            .offset(x: xOffset, y: yOffset)
             .allowsHitTesting(false)
         }
     }
@@ -111,7 +120,9 @@ struct MonthlyTrendChartView: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                tooltipView
+                GeometryReader { proxy in
+                    tooltipView(in: proxy)
+                }
             }
             .clipped()
             .frame(minHeight: 200)

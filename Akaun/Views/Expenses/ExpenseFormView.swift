@@ -31,12 +31,25 @@ struct ExpenseFormView: View {
         return false
     }
 
-    /// Expenses in pending or paid status are locked — only category can be changed.
+    @State private var showSaveError = false
+    @State private var saveErrorMessage = ""
+
+    /// Expenses in pending or paid status, or those already in a claim, are locked — only category can be changed.
     private var isLocked: Bool {
         if case .edit(let expense) = mode {
-            return expense.status == .pending || expense.status == .paid
+            return expense.status == .pending || expense.status == .paid || expense.claim != nil
         }
         return false
+    }
+
+    private var lockMessage: String {
+        if case .edit(let expense) = mode {
+            if expense.claim != nil {
+                return "This expense is part of a claim and cannot be edited. Only the category can be changed."
+            }
+            return "This expense is \(expense.status.rawValue.lowercased()) and cannot be fully edited. Only the category can be changed."
+        }
+        return ""
     }
 
     var body: some View {
@@ -44,7 +57,7 @@ struct ExpenseFormView: View {
             Form {
                 if isLocked {
                     Section {
-                        Text("This expense is \(editingExpenseStatus) and cannot be fully edited. Only the category can be changed.")
+                        Text(lockMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -97,14 +110,12 @@ struct ExpenseFormView: View {
             }
         }
         .onAppear { populateIfEditing() }
-        .frame(minWidth: 480, minHeight: 500)
-    }
-
-    private var editingExpenseStatus: String {
-        if case .edit(let expense) = mode {
-            return expense.status.rawValue.lowercased()
+        .alert("Save Failed", isPresented: $showSaveError) {
+            Button("OK") {}
+        } message: {
+            Text(saveErrorMessage)
         }
-        return ""
+        .frame(minWidth: 480, minHeight: 500)
     }
 
     private func populateIfEditing() {
@@ -147,7 +158,13 @@ struct ExpenseFormView: View {
                 let att = Attachment(filename: item.filename, displayName: item.displayName)
                 expense.attachments.append(att)
             }
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                saveErrorMessage = error.localizedDescription
+                showSaveError = true
+                return
+            }
 
         case .edit(let expense):
             if isLocked {

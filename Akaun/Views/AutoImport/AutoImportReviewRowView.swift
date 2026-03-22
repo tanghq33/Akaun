@@ -50,7 +50,6 @@ struct AutoImportReviewRowView: View {
                 .opacity(isHovering ? 1 : 0)
                 actionButton
             }
-
             .onHover { isHovering = $0 }
 
             // ── Error banner (only for .failed) ─────────────
@@ -72,24 +71,43 @@ struct AutoImportReviewRowView: View {
                 Divider()
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
                     GridRow {
-                        Text("Item").font(.caption).foregroundStyle(.secondary)
+                        Text("Type")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
-                        TextField("Item name", text: $item.itemName)
+                        Picker("", selection: $item.documentType) {
+                            Text("Expense").tag(DocumentType.expense)
+                            Text("Income").tag(DocumentType.income)
+                        }
+                        .labelsHidden()
+                    }
+                    GridRow {
+                        Text(item.documentType == .income ? "Description" : "Item")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
+                            .gridColumnAlignment(.trailing)
+                        TextField(item.documentType == .income ? "Description" : "Item name",
+                                  text: $item.itemName)
                             .textFieldStyle(.roundedBorder).font(.callout)
                     }
                     GridRow {
-                        Text("Supplier").font(.caption).foregroundStyle(.secondary)
+                        Text(item.documentType == .income ? "Source" : "Supplier")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
-                        TextField("Supplier", text: $item.supplier)
+                        TextField(item.documentType == .income ? "Payer / customer" : "Supplier",
+                                  text: $item.supplier)
                             .textFieldStyle(.roundedBorder).font(.callout)
                     }
                     GridRow {
                         Text("Date").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
-                        WideDatePicker(selection: $item.date)
+                        WideDatePicker(selection: item.date) { item.date = $0 }
                     }
                     GridRow {
                         Text("Amount").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
                         TextField("0.00", text: $amountString)
                             .textFieldStyle(.roundedBorder).font(.callout)
@@ -101,15 +119,20 @@ struct AutoImportReviewRowView: View {
                     }
                     GridRow {
                         Text("Ref").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
                         TextField("Reference", text: $item.reference)
                             .textFieldStyle(.roundedBorder).font(.callout)
                     }
                     GridRow {
                         Text("Category").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 72, alignment: .trailing)
                             .gridColumnAlignment(.trailing)
+                        let categories = item.documentType == .income
+                            ? loadIncomeCategories()
+                            : loadCategories()
                         Picker("", selection: $item.category) {
-                            ForEach(loadCategories(), id: \.self) { Text($0).tag($0) }
+                            ForEach(categories, id: \.self) { Text($0).tag($0) }
                         }
                         .labelsHidden()
                     }
@@ -124,6 +147,9 @@ struct AutoImportReviewRowView: View {
         )
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+        .onChange(of: item.documentType) { _, _ in
+            item.category = "Other"
+        }
         .onAppear {
             amountString = item.amountCents > 0
                 ? String(format: "%.2f", Double(item.amountCents) / 100.0)
@@ -174,7 +200,8 @@ struct AutoImportReviewRowView: View {
                 .controlSize(.small)
         case .failed:
             Button("Retry") {
-                queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens, categories: loadCategories())
+                queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens,
+                                expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
             }
             .controlSize(.small)
         case .extracting, .calling:

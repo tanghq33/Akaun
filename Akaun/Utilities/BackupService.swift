@@ -15,10 +15,35 @@ enum BackupService {
 
     struct BackupSettings: Codable {
         let categories: [String]
+        let incomeCategories: [String]
         let autoImportModel: String
         let autoImportMaxTokens: Int
         let autoImportShowFreeOnly: Bool
         let autoImportApiKey: String
+
+        enum CodingKeys: String, CodingKey {
+            case categories, incomeCategories, autoImportModel, autoImportMaxTokens, autoImportShowFreeOnly, autoImportApiKey
+        }
+
+        init(categories: [String], incomeCategories: [String], autoImportModel: String, autoImportMaxTokens: Int, autoImportShowFreeOnly: Bool, autoImportApiKey: String) {
+            self.categories = categories
+            self.incomeCategories = incomeCategories
+            self.autoImportModel = autoImportModel
+            self.autoImportMaxTokens = autoImportMaxTokens
+            self.autoImportShowFreeOnly = autoImportShowFreeOnly
+            self.autoImportApiKey = autoImportApiKey
+        }
+
+        // Custom decoder so older backups without incomeCategories can still be restored
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            categories = try c.decode([String].self, forKey: .categories)
+            incomeCategories = (try? c.decode([String].self, forKey: .incomeCategories)) ?? []
+            autoImportModel = try c.decode(String.self, forKey: .autoImportModel)
+            autoImportMaxTokens = try c.decode(Int.self, forKey: .autoImportMaxTokens)
+            autoImportShowFreeOnly = try c.decode(Bool.self, forKey: .autoImportShowFreeOnly)
+            autoImportApiKey = try c.decode(String.self, forKey: .autoImportApiKey)
+        }
     }
 
     enum BackupError: LocalizedError {
@@ -126,6 +151,7 @@ enum BackupService {
         let ud = UserDefaults.standard
         let settings = BackupSettings(
             categories: ud.stringArray(forKey: "expense.categories") ?? [],
+            incomeCategories: ud.stringArray(forKey: "income.categories") ?? [],
             autoImportModel: ud.string(forKey: "autoImport.model") ?? "",
             autoImportMaxTokens: ud.integer(forKey: "autoImport.maxTokens"),
             autoImportShowFreeOnly: ud.bool(forKey: "autoImport.showFreeOnly"),
@@ -174,21 +200,23 @@ enum BackupService {
         try fm.createDirectory(at: stagingURL, withIntermediateDirectories: true)
 
         // Copy database, documents, settings.json into staging
-        let items = ["database", "documents", "settings.json"]
-        for item in items {
-            let src = sourceURL.appendingPathComponent(item)
-            let dst = stagingURL.appendingPathComponent(item)
-            if fm.fileExists(atPath: src.path) {
-                do {
+        // Clean up staging directory if any step fails, so no orphaned staging is left behind
+        do {
+            let items = ["database", "documents", "settings.json"]
+            for item in items {
+                let src = sourceURL.appendingPathComponent(item)
+                let dst = stagingURL.appendingPathComponent(item)
+                if fm.fileExists(atPath: src.path) {
                     try fm.copyItem(at: src, to: dst)
-                } catch {
-                    throw BackupError.copyFailed(error)
                 }
             }
-        }
 
-        // Write pending flag
-        try "1".write(to: stagingFlagURL, atomically: true, encoding: .utf8)
+            // Write pending flag
+            try "1".write(to: stagingFlagURL, atomically: true, encoding: .utf8)
+        } catch {
+            try? fm.removeItem(at: stagingURL)
+            throw BackupError.copyFailed(error)
+        }
     }
 
     static func hasPendingRestore() -> Bool {
@@ -206,6 +234,9 @@ enum BackupService {
            let settings = try? JSONDecoder().decode(BackupSettings.self, from: data) {
             let ud = UserDefaults.standard
             ud.set(settings.categories, forKey: "expense.categories")
+            if !settings.incomeCategories.isEmpty {
+                ud.set(settings.incomeCategories, forKey: "income.categories")
+            }
             ud.set(settings.autoImportModel, forKey: "autoImport.model")
             ud.set(settings.autoImportMaxTokens, forKey: "autoImport.maxTokens")
             ud.set(settings.autoImportShowFreeOnly, forKey: "autoImport.showFreeOnly")
