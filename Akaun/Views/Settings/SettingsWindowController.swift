@@ -27,6 +27,7 @@ final class SettingsWindowController: NSWindowController {
             ("Categories",   "tag",           AnyView(CategoriesPane())),
             ("Backup",      "externaldrive.badge.timemachine", AnyView(BackupPane(modelContainer: modelContainer))),
             ("Reset",       "arrow.counterclockwise", AnyView(ResetPane())),
+            ("Advanced",    "gearshape.2",    AnyView(AdvancedPane())),
         ]
 
         for (title, icon, view) in tabs {

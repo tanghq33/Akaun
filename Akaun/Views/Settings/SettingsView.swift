@@ -905,6 +905,7 @@ struct ResetPane: View {
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintExpenseCount")
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintEnabled")
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintLastUpdated")
+        UserDefaults.standard.set(false, forKey: "godMode.enabled")
     }
 
     private func resetData() {
@@ -918,5 +919,27 @@ struct ResetPane: View {
     private func resetEverything() {
         resetSettings()
         resetData()
+    }
+}
+
+// MARK: - Advanced Pane
+
+struct AdvancedPane: View {
+    @AppStorage("godMode.enabled") private var godModeEnabled = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("God Mode", isOn: $godModeEnabled)
+                Text("When enabled, editing an expense that is part of a claim will unlock all descriptive fields (item name, supplier, date, reference, remark, attachments). The amount remains locked because it affects the claim total.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Editing")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Advanced")
+        .frame(minWidth: 480, minHeight: 200)
     }
 }

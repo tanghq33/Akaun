@@ -34,20 +34,28 @@ struct ExpenseFormView: View {
     @State private var showSaveError = false
     @State private var saveErrorMessage = ""
 
-    /// Expenses in pending or paid status, or those already in a claim, are locked — only category can be changed.
-    private var isLocked: Bool {
+    @AppStorage("godMode.enabled") private var godModeEnabled = false
+
+    /// True when the expense's status or claim relationship warrants a lock.
+    private var needsLock: Bool {
         if case .edit(let expense) = mode {
             return expense.status == .pending || expense.status == .paid || expense.claim != nil
         }
         return false
     }
 
+    /// Descriptive fields are editable in god mode even when locked.
+    private var isLocked: Bool { needsLock && !godModeEnabled }
+
+    /// Amount always stays locked when needsLock is true — it feeds Claim.totalAmountCents.
+    private var isAmountLocked: Bool { needsLock }
+
     private var lockMessage: String {
         if case .edit(let expense) = mode {
             if expense.claim != nil {
-                return "This expense is part of a claim and cannot be edited. Only the category can be changed."
+                return "This expense is part of claim \(expense.claim!.claimNumber). Enable God Mode in Settings → Advanced to edit descriptive fields."
             }
-            return "This expense is \(expense.status.rawValue.lowercased()) and cannot be fully edited. Only the category can be changed."
+            return "This expense is \(expense.status.rawValue.lowercased()) and cannot be fully edited. Enable God Mode in Settings → Advanced to edit descriptive fields."
         }
         return ""
     }
@@ -55,11 +63,17 @@ struct ExpenseFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if isLocked {
+                if needsLock {
                     Section {
-                        Text(lockMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if godModeEnabled {
+                            Label("God Mode active — amount is still locked", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        } else {
+                            Text(lockMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -71,7 +85,7 @@ struct ExpenseFormView: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                         .disabled(isLocked)
                     TextField("Amount (RM)", text: $amountString)
-                        .disabled(isLocked)
+                        .disabled(isAmountLocked)
                         .onChange(of: amountString) { _, new in
                             amountString = sanitiseAmount(new)
                         }
@@ -167,17 +181,18 @@ struct ExpenseFormView: View {
             }
 
         case .edit(let expense):
-            if isLocked {
-                // Only category can change
-                expense.category = category
-            } else {
+            expense.category = category             // always writable
+
+            if !isAmountLocked {
+                expense.amountCents = cents
+            }
+
+            if !isLocked {
                 expense.itemName = itemName
                 expense.supplier = supplier
                 expense.date = date
-                expense.amountCents = cents
                 expense.reference = reference
                 expense.remark = remark
-                expense.category = category
 
                 // Diff attachments
                 let currentFilenames = Set(attachments.map { $0.filename })
