@@ -26,9 +26,51 @@ final class AutoImportQueueItem: Identifiable {
     var reference: String = ""
     var status: ExpenseStatus = .unpaid
     var category: String = "Other"
+    @ObservationIgnored var isStopped: Bool = false
+    /// nil = not yet checked. [] = checked, no duplicates. Non-empty = has conflicts.
+    var duplicateMatches: [DuplicateMatch]? = nil
+    /// True when user chose "Skip" in the auto-detection sheet.
+    var isSkipped: Bool = false
 
     init(sourceFile: URL) {
         self.sourceFile = sourceFile
+    }
+}
+
+// MARK: - Processing Controller
+
+private actor ProcessingController {
+    private var activeCount = 0
+    private var maxConcurrent: Int
+    private var rateLimitDelay: TimeInterval
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var lastAcquireTime: Date = .distantPast
+
+    init(maxConcurrent: Int, rateLimitDelay: TimeInterval) {
+        self.maxConcurrent = maxConcurrent
+        self.rateLimitDelay = rateLimitDelay
+    }
+
+    func updateSettings(maxConcurrent: Int, rateLimitDelay: TimeInterval) {
+        self.maxConcurrent = maxConcurrent
+        self.rateLimitDelay = rateLimitDelay
+    }
+
+    /// Returns nanoseconds to sleep before starting work.
+    func acquire() async -> UInt64 {
+        while activeCount >= maxConcurrent {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        let elapsed = Date().timeIntervalSince(lastAcquireTime)
+        let wait = max(0, rateLimitDelay - elapsed)
+        activeCount += 1
+        lastAcquireTime = Date().addingTimeInterval(wait)
+        return UInt64(wait * 1_000_000_000)
+    }
+
+    func release() {
+        activeCount -= 1
+        if let w = waiters.first { waiters.removeFirst(); w.resume() }
     }
 }
 
@@ -37,6 +79,7 @@ final class AutoImportQueueItem: Identifiable {
 @Observable
 final class AutoImportQueue {
     var items: [AutoImportQueueItem] = []
+    private var controller = ProcessingController(maxConcurrent: 1, rateLimitDelay: 0)
 
     var processingItems: [AutoImportQueueItem] {
         items.filter { item in
@@ -52,7 +95,33 @@ final class AutoImportQueue {
     }
 
     func removeItem(_ item: AutoImportQueueItem) {
+        item.isStopped = true
         items.removeAll { $0.id == item.id }
+    }
+
+    func stopItem(_ item: AutoImportQueueItem) {
+        item.isStopped = true
+        item.state = .failed("Stopped")
+    }
+
+    func stopAll() {
+        for item in items where item.state == .extracting || item.state == .calling {
+            stopItem(item)
+        }
+    }
+
+    func retryAllFailed(
+        apiKey: String,
+        model: String,
+        maxTokens: Int,
+        expenseCategories: [String] = [],
+        incomeCategories: [String] = []
+    ) {
+        let failed = items.filter { if case .failed = $0.state { return true }; return false }
+        for item in failed {
+            retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens,
+                      expenseCategories: expenseCategories, incomeCategories: incomeCategories)
+        }
     }
 
     func enqueue(
@@ -63,15 +132,20 @@ final class AutoImportQueue {
         expenseCategories: [String] = [],
         incomeCategories: [String] = []
     ) {
-        let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
-        let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
-            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
-        let hint = hintEnabled ? storedHint : nil
+        let hint = currentHint
+
+        let parallelTasks = UserDefaults.standard.object(forKey: "autoImport.parallelTasks").flatMap { $0 as? Int } ?? 1
+        let rateLimitDelay = UserDefaults.standard.object(forKey: "autoImport.rateLimitDelay").flatMap { $0 as? Double } ?? 0.0
+        Task { await controller.updateSettings(maxConcurrent: max(1, parallelTasks), rateLimitDelay: max(0, rateLimitDelay)) }
 
         for url in urls {
             let item = AutoImportQueueItem(sourceFile: url)
             items.append(item)
             Task {
+                let sleepNs = await controller.acquire()
+                guard !item.isStopped else { await controller.release(); return }
+                if sleepNs > 0 { try? await Task.sleep(nanoseconds: sleepNs) }
+                guard !item.isStopped else { await controller.release(); return }
                 let result = await processSingleFile(
                     url: url,
                     apiKey: apiKey,
@@ -80,8 +154,13 @@ final class AutoImportQueue {
                     expenseCategories: expenseCategories,
                     incomeCategories: incomeCategories,
                     hint: hint,
-                    onStateChange: { item.state = $0 }
+                    onStateChange: { newState in
+                        guard !item.isStopped else { return }
+                        item.state = newState
+                    }
                 )
+                await controller.release()
+                guard !item.isStopped else { return }
                 apply(result, to: item)
             }
         }
@@ -95,17 +174,21 @@ final class AutoImportQueue {
         expenseCategories: [String] = [],
         incomeCategories: [String] = []
     ) {
-        let storedHint = UserDefaults.standard.string(forKey: "autoImport.categorizationHint")
-        let hintEnabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
-            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
-        let hint = hintEnabled ? storedHint : nil
+        let hint = currentHint
 
+        item.isStopped = false
         item.state = .extracting
         item.documentType = .expense
         item.itemName = ""
         item.supplier = ""
         item.category = "Other"
+        item.duplicateMatches = nil
+        item.isSkipped = false
         Task {
+            let sleepNs = await controller.acquire()
+            guard !item.isStopped else { await controller.release(); return }
+            if sleepNs > 0 { try? await Task.sleep(nanoseconds: sleepNs) }
+            guard !item.isStopped else { await controller.release(); return }
             let result = await processSingleFile(
                 url: item.sourceFile,
                 apiKey: apiKey,
@@ -114,8 +197,13 @@ final class AutoImportQueue {
                 expenseCategories: expenseCategories,
                 incomeCategories: incomeCategories,
                 hint: hint,
-                onStateChange: { item.state = $0 }
+                onStateChange: { newState in
+                    guard !item.isStopped else { return }
+                    item.state = newState
+                }
             )
+            await controller.release()
+            guard !item.isStopped else { return }
             apply(result, to: item)
         }
     }
@@ -165,7 +253,7 @@ final class AutoImportQueue {
     }
 
     func importAllReady(in context: ModelContext) {
-        for item in items where item.state == .ready {
+        for item in items where item.state == .ready && !item.isSkipped && (item.duplicateMatches ?? []).isEmpty {
             importItem(item, in: context)
         }
     }
@@ -223,6 +311,12 @@ final class AutoImportQueue {
     }
 
     // MARK: - Private
+
+    private var currentHint: String? {
+        let enabled = UserDefaults.standard.object(forKey: "autoImport.categorizationHintEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoImport.categorizationHintEnabled")
+        return enabled ? UserDefaults.standard.string(forKey: "autoImport.categorizationHint") : nil
+    }
 
     private func apply(_ result: Result<ExtractedDocument, Error>, to item: AutoImportQueueItem) {
         switch result {

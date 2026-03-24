@@ -14,6 +14,10 @@ struct AutoImportReviewRowView: View {
     @State private var amountString = ""
     @State private var quickLookCoordinator = QuickLookCoordinator()
     @State private var isHovering = false
+    private var hasDuplicates: Bool {
+        if let matches = item.duplicateMatches { return !matches.isEmpty }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -47,7 +51,16 @@ struct AutoImportReviewRowView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
-                .opacity(isHovering ? 1 : 0)
+                if item.state != .imported {
+                    Button(role: .destructive) {
+                        queue.removeItem(item)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Discard")
+                }
                 actionButton
             }
             .onHover { isHovering = $0 }
@@ -66,8 +79,53 @@ struct AutoImportReviewRowView: View {
                 .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
 
-            // ── Form fields (hidden when .imported) ─────────
-            if item.state != .imported {
+            // ── Duplicate warning banner ──────────────────────
+            if let matches = item.duplicateMatches, !matches.isEmpty, !item.isSkipped {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Possible duplicate")
+                            .font(.caption).fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                    }
+                    ForEach(Array(matches.enumerated()), id: \.offset) { _, match in
+                        HStack(spacing: 4) {
+                            Text(match.existingRecordNumber)
+                                .font(.caption).fontWeight(.medium)
+                            Text("·")
+                            Text(Formatters.displayDate.string(from: match.existingDate))
+                            Text("·")
+                            Text(Formatters.formatCents(match.existingAmountCents))
+                            Text("·")
+                            Text(reasonSummary(match))
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            // ── Skipped banner ────────────────────────────────
+            if item.isSkipped {
+                HStack(spacing: 6) {
+                    Image(systemName: "slash.circle")
+                        .foregroundStyle(.secondary)
+                    Text("Skipped — possible duplicate")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            // ── Form fields (hidden when .imported or skipped) ──
+            if item.state != .imported && !item.isSkipped {
                 Divider()
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
                     GridRow {
@@ -161,22 +219,30 @@ struct AutoImportReviewRowView: View {
 
     private var statusIcon: some View {
         Group {
-            switch item.state {
-            case .extracting:
-                Image(systemName: "doc.text.magnifyingglass")
+            if item.isSkipped {
+                Image(systemName: "slash.circle")
                     .foregroundStyle(.secondary)
-            case .calling:
-                Image(systemName: "arrow.trianglehead.2.clockwise")
-                    .foregroundStyle(Color.accentColor)
-            case .ready:
-                Image(systemName: "circle.dotted")
+            } else if hasDuplicates {
+                Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-            case .imported:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            case .failed:
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.red)
+            } else {
+                switch item.state {
+                case .extracting:
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .foregroundStyle(.secondary)
+                case .calling:
+                    Image(systemName: "arrow.trianglehead.2.clockwise")
+                        .foregroundStyle(Color.accentColor)
+                case .ready:
+                    Image(systemName: "circle.dotted")
+                        .foregroundStyle(.orange)
+                case .imported:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .failed:
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                }
             }
         }
         .font(.subheadline)
@@ -187,30 +253,62 @@ struct AutoImportReviewRowView: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        switch item.state {
-        case .ready:
-            Button("Import") {
-                queue.importItem(item, in: modelContext)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        case .imported:
-            Button("Imported") {}
-                .disabled(true)
-                .controlSize(.small)
-        case .failed:
-            Button("Retry") {
-                queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens,
-                                expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
+        if item.isSkipped {
+            Button("Undo Skip") {
+                item.isSkipped = false
             }
             .controlSize(.small)
-        case .extracting, .calling:
-            ProgressView()
+            .buttonStyle(.borderless)
+        } else {
+            switch item.state {
+            case .ready:
+                if hasDuplicates {
+                    HStack(spacing: 6) {
+                        Button("Skip") { item.isSkipped = true }
+                            .controlSize(.small)
+                            .buttonStyle(.borderless)
+                        Button("Import Anyway") {
+                            queue.importItem(item, in: modelContext)
+                        }
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button("Import") { checkAndImport() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            case .imported:
+                Button("Imported") {}
+                    .disabled(true)
+                    .controlSize(.small)
+            case .failed:
+                Button("Retry") {
+                    queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens,
+                                    expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
+                }
                 .controlSize(.small)
+            case .extracting, .calling:
+                ProgressView()
+                    .controlSize(.small)
+            }
         }
     }
 
     // MARK: - Helpers
+
+    private func checkAndImport() {
+        if let cached = item.duplicateMatches {
+            if cached.isEmpty { queue.importItem(item, in: modelContext) }
+            // Non-empty: banner is already showing — user uses Skip / Import Anyway
+        } else {
+            // Fallback: item was never auto-checked
+            let expenses = (try? modelContext.fetch(FetchDescriptor<Expense>())) ?? []
+            let incomes  = (try? modelContext.fetch(FetchDescriptor<Income>())) ?? []
+            let matches = DuplicateDetector.findMatches(for: item, expenses: expenses, incomes: incomes)
+            item.duplicateMatches = matches
+            if matches.isEmpty { queue.importItem(item, in: modelContext) }
+        }
+    }
 
     private func sanitiseAmount(_ input: String) -> String {
         var result = ""
@@ -233,5 +331,15 @@ struct AutoImportReviewRowView: View {
 
     private func parseCents(_ string: String) -> Int {
         Int(((Double(string) ?? 0.0) * 100).rounded())
+    }
+
+    private func reasonSummary(_ match: DuplicateMatch) -> String {
+        match.reasons.map { reason in
+            switch reason {
+            case .filename: "Filename match"
+            case .reference: "Reference match"
+            case .amountDateSupplier: "Amount+date+supplier"
+            }
+        }.joined(separator: ", ")
     }
 }

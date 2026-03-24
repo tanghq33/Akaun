@@ -28,6 +28,8 @@ struct AutoImportView: View {
                                 queue.retryItem(item, apiKey: apiKey, model: model, maxTokens: maxTokens, expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories())
                             } onRemove: {
                                 queue.removeItem(item)
+                            } onStop: {
+                                queue.stopItem(item)
                             }
                         }
                     }
@@ -44,6 +46,21 @@ struct AutoImportView: View {
             }
         }
         .navigationTitle("Auto Import")
+        .toolbar {
+            ToolbarItemGroup {
+                if queue.items.contains(where: { $0.state == .extracting || $0.state == .calling }) {
+                    Button("Stop All") { queue.stopAll() }
+                }
+                if queue.items.contains(where: { if case .failed = $0.state { return true }; return false }) {
+                    Button("Retry All") {
+                        queue.retryAllFailed(
+                            apiKey: apiKey, model: model, maxTokens: maxTokens,
+                            expenseCategories: loadCategories(), incomeCategories: loadIncomeCategories()
+                        )
+                    }
+                }
+            }
+        }
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.pdf, .png, .jpeg],

@@ -4,6 +4,7 @@ struct AutoImportQueueRowView: View {
     var item: AutoImportQueueItem
     var onRetry: (() -> Void)? = nil
     var onRemove: (() -> Void)? = nil
+    var onStop: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -22,6 +23,14 @@ struct AutoImportQueueRowView: View {
             if isInFlight {
                 ProgressView()
                     .controlSize(.small)
+                if let onStop {
+                    Button(action: onStop) {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Stop")
+                }
             }
             if case .failed = item.state {
                 if let onRetry {

@@ -32,10 +32,12 @@ private struct OpenRouterModelsResponse: Decodable {
 // MARK: - Intelligence pane
 
 struct IntelligencePane: View {
-    @AppStorage("autoImport.apiKey")       private var apiKey      = ""
-    @AppStorage("autoImport.model")        private var model       = "qwen/qwen3-vl-235b-a22b-thinking"
-    @AppStorage("autoImport.maxTokens")    private var maxTokens   = 1024
-    @AppStorage("autoImport.showFreeOnly") private var showFreeOnly = false
+    @AppStorage("autoImport.apiKey")         private var apiKey         = ""
+    @AppStorage("autoImport.model")          private var model           = "qwen/qwen3-vl-235b-a22b-thinking"
+    @AppStorage("autoImport.maxTokens")      private var maxTokens       = 1024
+    @AppStorage("autoImport.showFreeOnly")   private var showFreeOnly    = false
+    @AppStorage("autoImport.parallelTasks")  private var parallelTasks   = 1
+    @AppStorage("autoImport.rateLimitDelay") private var rateLimitDelay  = 0.0
 
     @AppStorage("autoImport.categorizationHintEnabled")      private var hintEnabled     = true
     @AppStorage("autoImport.categorizationHint")             private var storedHint      = ""
@@ -79,6 +81,22 @@ struct IntelligencePane: View {
                 Toggle("Free models only", isOn: $showFreeOnly)
                     .disabled(availableModels.isEmpty)
                 TextField("Max Tokens", value: $maxTokens, format: .number)
+            }
+
+            Section {
+                Stepper("Parallel Tasks: \(parallelTasks)", value: $parallelTasks, in: 1...10)
+                LabeledContent("Rate Limit Delay") {
+                    HStack(spacing: 6) {
+                        TextField("", value: $rateLimitDelay, format: .number)
+                            .frame(width: 60)
+                        Text("seconds")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Processing")
+            } footer: {
+                Text("Limit how many files are processed at the same time, and add a delay between API calls to avoid hitting rate limits.")
             }
 
             Section {
@@ -905,6 +923,8 @@ struct ResetPane: View {
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintExpenseCount")
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintEnabled")
         UserDefaults.standard.removeObject(forKey: "autoImport.categorizationHintLastUpdated")
+        UserDefaults.standard.removeObject(forKey: "autoImport.parallelTasks")
+        UserDefaults.standard.removeObject(forKey: "autoImport.rateLimitDelay")
         UserDefaults.standard.set(false, forKey: "godMode.enabled")
     }
 
