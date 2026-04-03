@@ -1,41 +1,23 @@
 import SwiftUI
 
 struct ProfitThisMonthView: View {
-    let expenses: [Expense]
-    let incomes: [Income]
+    let incomeCents: Int
+    let expenseCents: Int
+    let period: DashboardPeriod
 
-    private var currentMonthComponents: DateComponents {
-        Calendar.current.dateComponents([.year, .month], from: Date.now)
-    }
-
-    private var incomeCents: Int {
-        let comps = currentMonthComponents
-        return incomes
-            .filter { Calendar.current.dateComponents([.year, .month], from: $0.date) == comps }
-            .reduce(0) { $0 + $1.amountCents }
-    }
-
-    private var expenseCents: Int {
-        let comps = currentMonthComponents
-        return expenses
-            .filter { Calendar.current.dateComponents([.year, .month], from: $0.date) == comps }
-            .reduce(0) { $0 + $1.amountCents }
-    }
-
-    private var profitCents: Int {
-        incomeCents - expenseCents
-    }
+    private var profitCents: Int { incomeCents - expenseCents }
 
     var body: some View {
-        GroupBox("Profit This Month") {
+        GroupBox("Profit") {
             VStack(spacing: 16) {
                 Spacer()
 
-                Text(Formatters.formatCents(abs(profitCents)))
+                let isLoss = profitCents < 0
+                Text(isLoss ? "- \(Formatters.formatCents(abs(profitCents)))" : Formatters.formatCents(profitCents))
                     .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundStyle(profitCents >= 0 ? Color.green : Color.red)
+                    .foregroundStyle(isLoss ? Color.red : Color.green)
 
-                if profitCents < 0 {
+                if isLoss {
                     Text("Loss")
                         .font(.caption)
                         .foregroundStyle(.red)
