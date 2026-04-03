@@ -162,6 +162,10 @@ struct ClaimFormView: View {
             showSaveError = true
             return
         }
+        if !attachments.isEmpty {
+            let ctx = modelContext
+            Task { await extractAndStoreSearchText(for: claim, in: ctx) }
+        }
         dismiss()
     }
 

@@ -20,6 +20,9 @@ struct AkaunApp: App {
             ClaimAttachment.self,
             IncomeAttachment.self,
             AppSequence.self,
+            ExpenseSearchData.self,
+            IncomeSearchData.self,
+            ClaimSearchData.self,
         ])
         try? FileManager.default.createDirectory(
             at: BackupService.appSupportURL,
@@ -43,6 +46,9 @@ struct AkaunApp: App {
                 .onAppear {
                     migrateDocumentFilenameToAttachments()
                     migrateAttachmentsToSubfolders()
+                    migrateExpenseSearchData()
+                    migrateIncomeSearchData()
+                    migrateClaimSearchData()
                     let ctx = sharedModelContainer.mainContext
                     Task { await autoImportQueue.startupHintCheckIfNeeded(in: ctx) }
                 }
@@ -119,6 +125,42 @@ struct AkaunApp: App {
                 }
             }
             if migrated { try? context.save() }
+        }
+    }
+
+    private func migrateExpenseSearchData() {
+        let context = sharedModelContainer.mainContext
+        guard let expenses = try? context.fetch(FetchDescriptor<Expense>()) else { return }
+        let needsMigration = expenses.filter { $0.searchData == nil && !$0.attachments.isEmpty }
+        guard !needsMigration.isEmpty else { return }
+        Task {
+            for expense in needsMigration {
+                await extractAndStoreSearchText(for: expense, in: context)
+            }
+        }
+    }
+
+    private func migrateIncomeSearchData() {
+        let context = sharedModelContainer.mainContext
+        guard let incomes = try? context.fetch(FetchDescriptor<Income>()) else { return }
+        let needsMigration = incomes.filter { $0.searchData == nil && !$0.attachments.isEmpty }
+        guard !needsMigration.isEmpty else { return }
+        Task {
+            for income in needsMigration {
+                await extractAndStoreSearchText(for: income, in: context)
+            }
+        }
+    }
+
+    private func migrateClaimSearchData() {
+        let context = sharedModelContainer.mainContext
+        guard let claims = try? context.fetch(FetchDescriptor<Claim>()) else { return }
+        let needsMigration = claims.filter { $0.searchData == nil && !$0.claimAttachments.isEmpty }
+        guard !needsMigration.isEmpty else { return }
+        Task {
+            for claim in needsMigration {
+                await extractAndStoreSearchText(for: claim, in: context)
+            }
         }
     }
 

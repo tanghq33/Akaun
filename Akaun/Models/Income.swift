@@ -11,6 +11,9 @@ import Foundation
     var category: String
     var remark: String
 
+    @Relationship(deleteRule: .cascade, inverse: \IncomeSearchData.income)
+    var searchData: IncomeSearchData?
+
     @Relationship(deleteRule: .cascade, inverse: \IncomeAttachment.income)
     var attachments: [IncomeAttachment] = []
 

@@ -227,6 +227,8 @@ final class AutoImportQueue {
                 context.insert(expense)
                 let attachment = Attachment(filename: filename, displayName: displayName, addedDate: item.date)
                 expense.attachments.append(attachment)
+                try context.save()
+                Task { await extractAndStoreSearchText(for: expense, in: context) }
 
             case .income:
                 let filename = try DocumentStore.importFile(from: item.sourceFile, subfolder: "Income")
@@ -243,6 +245,8 @@ final class AutoImportQueue {
                 context.insert(income)
                 let attachment = IncomeAttachment(filename: filename, displayName: displayName, addedDate: item.date)
                 income.attachments.append(attachment)
+                try context.save()
+                Task { await extractAndStoreSearchText(for: income, in: context) }
             }
 
             try context.save()

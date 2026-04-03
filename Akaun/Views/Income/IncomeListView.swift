@@ -9,11 +9,28 @@ struct IncomeListView: View {
 
     @State private var showingForm = false
     @State private var deleteTarget: Income?
+    @State private var searchText: String = ""
+    @State private var debouncedQuery: String = ""
+
+    private var filteredIncomes: [Income] {
+        let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return incomes }
+        let lower = query.lowercased()
+        return incomes.filter { income in
+            income.incomeNumber.lowercased().contains(lower) ||
+            income.source.lowercased().contains(lower) ||
+            income.descriptionText.lowercased().contains(lower) ||
+            income.reference.lowercased().contains(lower) ||
+            income.category.lowercased().contains(lower) ||
+            income.remark.lowercased().contains(lower) ||
+            (income.searchData?.text.lowercased().contains(lower) ?? false)
+        }
+    }
 
     var body: some View {
         @Bindable var nav = nav
         List(selection: $nav.selectedIncomeID) {
-            ForEach(incomes) { income in
+            ForEach(filteredIncomes) { income in
                 IncomeRowView(income: income)
                     .tag(income.persistentModelID)
                     .contextMenu {
@@ -26,6 +43,13 @@ struct IncomeListView: View {
             }
         }
         .navigationTitle("Income")
+        .searchable(text: $searchText, placement: .sidebar, prompt: "Search income")
+        .onChange(of: searchText) { _, new in
+            Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if searchText == new { debouncedQuery = new }
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showingForm = true } label: {

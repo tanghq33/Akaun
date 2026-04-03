@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PDFKit
+import SwiftData
 import Vision
 
 // MARK: - Data Types
@@ -414,6 +415,74 @@ func processDocuments(
     }
 
     return results
+}
+
+// MARK: - Search Data Extraction
+
+func extractAndStoreSearchText(for expense: Expense, in context: ModelContext) async {
+    guard !expense.attachments.isEmpty else { return }
+    var texts: [String] = []
+    for attachment in expense.attachments {
+        let url = DocumentStore.url(for: attachment.filename)
+        if let text = try? await extractText(from: url),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            texts.append(text)
+        }
+    }
+    let combined = texts.joined(separator: "\n\n")
+    guard !combined.isEmpty else { return }
+    if let existing = expense.searchData {
+        existing.text = combined
+    } else {
+        let sd = ExpenseSearchData(text: combined)
+        sd.expense = expense
+        context.insert(sd)
+    }
+    try? context.save()
+}
+
+func extractAndStoreSearchText(for income: Income, in context: ModelContext) async {
+    guard !income.attachments.isEmpty else { return }
+    var texts: [String] = []
+    for attachment in income.attachments {
+        let url = DocumentStore.url(for: attachment.filename)
+        if let text = try? await extractText(from: url),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            texts.append(text)
+        }
+    }
+    let combined = texts.joined(separator: "\n\n")
+    guard !combined.isEmpty else { return }
+    if let existing = income.searchData {
+        existing.text = combined
+    } else {
+        let sd = IncomeSearchData(text: combined)
+        sd.income = income
+        context.insert(sd)
+    }
+    try? context.save()
+}
+
+func extractAndStoreSearchText(for claim: Claim, in context: ModelContext) async {
+    guard !claim.claimAttachments.isEmpty else { return }
+    var texts: [String] = []
+    for attachment in claim.claimAttachments {
+        let url = DocumentStore.url(for: attachment.filename)
+        if let text = try? await extractText(from: url),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            texts.append(text)
+        }
+    }
+    let combined = texts.joined(separator: "\n\n")
+    guard !combined.isEmpty else { return }
+    if let existing = claim.searchData {
+        existing.text = combined
+    } else {
+        let sd = ClaimSearchData(text: combined)
+        sd.claim = claim
+        context.insert(sd)
+    }
+    try? context.save()
 }
 
 // MARK: - Single-File Processing (for queue-based import)

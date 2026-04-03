@@ -179,6 +179,10 @@ struct ExpenseFormView: View {
                 showSaveError = true
                 return
             }
+            if !attachments.isEmpty {
+                let ctx = modelContext
+                Task { await extractAndStoreSearchText(for: expense, in: ctx) }
+            }
 
         case .edit(let expense):
             expense.category = category             // always writable
@@ -205,6 +209,11 @@ struct ExpenseFormView: View {
                     expense.attachments.append(att)
                 }
                 expense.documentFilename = nil
+            }
+            if !expense.attachments.isEmpty {
+                try? modelContext.save()
+                let ctx = modelContext
+                Task { await extractAndStoreSearchText(for: expense, in: ctx) }
             }
         }
         dismiss()

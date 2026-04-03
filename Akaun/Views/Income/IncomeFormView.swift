@@ -124,6 +124,10 @@ struct IncomeFormView: View {
                 showSaveError = true
                 return
             }
+            if !attachments.isEmpty {
+                let ctx = modelContext
+                Task { await extractAndStoreSearchText(for: income, in: ctx) }
+            }
 
         case .edit(let income):
             income.source = source
@@ -143,6 +147,11 @@ struct IncomeFormView: View {
             for item in attachments where !existingModelFilenames.contains(item.filename) {
                 let att = IncomeAttachment(filename: item.filename, displayName: item.displayName)
                 income.attachments.append(att)
+            }
+            if !income.attachments.isEmpty {
+                try? modelContext.save()
+                let ctx = modelContext
+                Task { await extractAndStoreSearchText(for: income, in: ctx) }
             }
         }
         dismiss()

@@ -20,6 +20,9 @@ enum ExpenseStatus: String, Codable, CaseIterable {
     var category: String = "Other"
     var claim: Claim?
 
+    @Relationship(deleteRule: .cascade, inverse: \ExpenseSearchData.expense)
+    var searchData: ExpenseSearchData?
+
     @Relationship(deleteRule: .cascade, inverse: \Attachment.expense)
     var attachments: [Attachment] = []
 
