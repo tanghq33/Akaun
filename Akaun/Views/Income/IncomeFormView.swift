@@ -148,8 +148,14 @@ struct IncomeFormView: View {
                 let att = IncomeAttachment(filename: item.filename, displayName: item.displayName)
                 income.attachments.append(att)
             }
+            do {
+                try modelContext.save()
+            } catch {
+                saveErrorMessage = error.localizedDescription
+                showSaveError = true
+                return
+            }
             if !income.attachments.isEmpty {
-                try? modelContext.save()
                 let ctx = modelContext
                 Task { await extractAndStoreSearchText(for: income, in: ctx) }
             }

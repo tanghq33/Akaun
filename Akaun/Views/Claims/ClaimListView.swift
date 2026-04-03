@@ -10,6 +10,7 @@ struct ClaimListView: View {
     @State private var showingForm = false
     @State private var searchText: String = ""
     @State private var debouncedQuery: String = ""
+    @State private var debounceTask: Task<Void, Never>?
 
     private var filteredClaims: [Claim] {
         let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,9 +33,16 @@ struct ClaimListView: View {
         .navigationTitle("Claims")
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search claims")
         .onChange(of: searchText) { _, new in
-            Task {
+            debounceTask?.cancel()
+            debounceTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                if searchText == new { debouncedQuery = new }
+                if !Task.isCancelled { debouncedQuery = new }
+            }
+        }
+        .onChange(of: debouncedQuery) { _, _ in
+            if let selectedID = nav.selectedClaimID,
+               !filteredClaims.contains(where: { $0.persistentModelID == selectedID }) {
+                nav.selectedClaimID = nil
             }
         }
         .toolbar {

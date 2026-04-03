@@ -46,11 +46,13 @@ struct AkaunApp: App {
                 .onAppear {
                     migrateDocumentFilenameToAttachments()
                     migrateAttachmentsToSubfolders()
-                    migrateExpenseSearchData()
-                    migrateIncomeSearchData()
-                    migrateClaimSearchData()
                     let ctx = sharedModelContainer.mainContext
-                    Task { await autoImportQueue.startupHintCheckIfNeeded(in: ctx) }
+                    Task {
+                        await migrateExpenseSearchData()
+                        await migrateIncomeSearchData()
+                        await migrateClaimSearchData()
+                        await autoImportQueue.startupHintCheckIfNeeded(in: ctx)
+                    }
                 }
         }
         .modelContainer(sharedModelContainer)
@@ -128,39 +130,30 @@ struct AkaunApp: App {
         }
     }
 
-    private func migrateExpenseSearchData() {
+    private func migrateExpenseSearchData() async {
         let context = sharedModelContainer.mainContext
         guard let expenses = try? context.fetch(FetchDescriptor<Expense>()) else { return }
         let needsMigration = expenses.filter { $0.searchData == nil && !$0.attachments.isEmpty }
-        guard !needsMigration.isEmpty else { return }
-        Task {
-            for expense in needsMigration {
-                await extractAndStoreSearchText(for: expense, in: context)
-            }
+        for expense in needsMigration {
+            await extractAndStoreSearchText(for: expense, in: context)
         }
     }
 
-    private func migrateIncomeSearchData() {
+    private func migrateIncomeSearchData() async {
         let context = sharedModelContainer.mainContext
         guard let incomes = try? context.fetch(FetchDescriptor<Income>()) else { return }
         let needsMigration = incomes.filter { $0.searchData == nil && !$0.attachments.isEmpty }
-        guard !needsMigration.isEmpty else { return }
-        Task {
-            for income in needsMigration {
-                await extractAndStoreSearchText(for: income, in: context)
-            }
+        for income in needsMigration {
+            await extractAndStoreSearchText(for: income, in: context)
         }
     }
 
-    private func migrateClaimSearchData() {
+    private func migrateClaimSearchData() async {
         let context = sharedModelContainer.mainContext
         guard let claims = try? context.fetch(FetchDescriptor<Claim>()) else { return }
         let needsMigration = claims.filter { $0.searchData == nil && !$0.claimAttachments.isEmpty }
-        guard !needsMigration.isEmpty else { return }
-        Task {
-            for claim in needsMigration {
-                await extractAndStoreSearchText(for: claim, in: context)
-            }
+        for claim in needsMigration {
+            await extractAndStoreSearchText(for: claim, in: context)
         }
     }
 

@@ -249,7 +249,6 @@ final class AutoImportQueue {
                 Task { await extractAndStoreSearchText(for: income, in: context) }
             }
 
-            try context.save()
             item.state = .imported
         } catch {
             item.state = .failed(error.localizedDescription)

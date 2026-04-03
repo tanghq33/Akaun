@@ -11,6 +11,7 @@ struct ExpenseListView: View {
     @State private var deleteTarget: Expense?
     @State private var searchText: String = ""
     @State private var debouncedQuery: String = ""
+    @State private var debounceTask: Task<Void, Never>?
 
     private var filteredExpenses: [Expense] {
         let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -38,9 +39,16 @@ struct ExpenseListView: View {
         .navigationTitle("Expenses")
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search expenses")
         .onChange(of: searchText) { _, new in
-            Task {
+            debounceTask?.cancel()
+            debounceTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                if searchText == new { debouncedQuery = new }
+                if !Task.isCancelled { debouncedQuery = new }
+            }
+        }
+        .onChange(of: debouncedQuery) { _, _ in
+            if let selectedID = nav.selectedExpenseID,
+               !filteredExpenses.contains(where: { $0.persistentModelID == selectedID }) {
+                nav.selectedExpenseID = nil
             }
         }
         .toolbar {
@@ -78,5 +86,6 @@ struct ExpenseListView: View {
             nav.selectedExpenseID = nil
         }
         modelContext.delete(expense)
+        try? modelContext.save()
     }
 }

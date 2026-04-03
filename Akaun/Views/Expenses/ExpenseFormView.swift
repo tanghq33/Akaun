@@ -210,8 +210,14 @@ struct ExpenseFormView: View {
                 }
                 expense.documentFilename = nil
             }
+            do {
+                try modelContext.save()
+            } catch {
+                saveErrorMessage = error.localizedDescription
+                showSaveError = true
+                return
+            }
             if !expense.attachments.isEmpty {
-                try? modelContext.save()
                 let ctx = modelContext
                 Task { await extractAndStoreSearchText(for: expense, in: ctx) }
             }

@@ -11,6 +11,7 @@ struct IncomeListView: View {
     @State private var deleteTarget: Income?
     @State private var searchText: String = ""
     @State private var debouncedQuery: String = ""
+    @State private var debounceTask: Task<Void, Never>?
 
     private var filteredIncomes: [Income] {
         let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,9 +46,16 @@ struct IncomeListView: View {
         .navigationTitle("Income")
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search income")
         .onChange(of: searchText) { _, new in
-            Task {
+            debounceTask?.cancel()
+            debounceTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                if searchText == new { debouncedQuery = new }
+                if !Task.isCancelled { debouncedQuery = new }
+            }
+        }
+        .onChange(of: debouncedQuery) { _, _ in
+            if let selectedID = nav.selectedIncomeID,
+               !filteredIncomes.contains(where: { $0.persistentModelID == selectedID }) {
+                nav.selectedIncomeID = nil
             }
         }
         .toolbar {
@@ -81,6 +89,7 @@ struct IncomeListView: View {
             DocumentStore.deleteFile(named: attachment.filename)
         }
         modelContext.delete(income)
+        try? modelContext.save()
         deleteTarget = nil
     }
 }
