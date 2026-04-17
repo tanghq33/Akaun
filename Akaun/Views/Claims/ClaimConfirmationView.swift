@@ -9,12 +9,33 @@ struct ClaimConfirmationView: View {
 
     @State private var attachments: [AttachmentItem] = []
     @State private var newFilenames: Set<String> = []
+    @State private var claimNumberCopied = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Claim Summary") {
-                    LabeledContent("Claim", value: claim.claimNumber)
+                    LabeledContent("Claim") {
+                        HStack(spacing: 6) {
+                            Text(claim.claimNumber)
+                                .foregroundStyle(.primary)
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(claim.claimNumber, forType: .string)
+                                claimNumberCopied = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    claimNumberCopied = false
+                                }
+                            } label: {
+                                Image(systemName: claimNumberCopied ? "checkmark" : "doc.on.doc")
+                                    .foregroundStyle(claimNumberCopied ? Color.green : Color.secondary)
+                                    .imageScale(.small)
+                                    .animation(.default, value: claimNumberCopied)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Copy claim number")
+                        }
+                    }
                     LabeledContent("Date", value: Formatters.displayDate.string(from: claim.date))
                     LabeledContent("Total", value: Formatters.formatCents(claim.totalAmountCents))
                     LabeledContent("Expenses", value: "\(claim.expenses.count)")

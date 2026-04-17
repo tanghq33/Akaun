@@ -23,6 +23,7 @@ struct CategoryData: Identifiable {
     var id: String { category }
     let category: String
     let amount: Double
+    let amountCents: Int
 }
 
 // MARK: - Shared Formatters
@@ -160,7 +161,7 @@ func computeCategoryData(expenses: [Expense], period: DashboardPeriod) -> [Categ
     return totals
         .filter { $0.value > 0 }
         .sorted { $0.value > $1.value }
-        .map { CategoryData(category: $0.key, amount: Double($0.value) / 100.0) }
+        .map { CategoryData(category: $0.key, amount: Double($0.value) / 100.0, amountCents: $0.value) }
 }
 
 func computePeriodTotals(expenses: [Expense], incomes: [Income], period: DashboardPeriod) -> (incomeCents: Int, expenseCents: Int) {
