@@ -14,4 +14,5 @@ enum SidebarSection: String, Hashable, CaseIterable {
     var selectedExpenseID: PersistentIdentifier?
     var selectedIncomeID: PersistentIdentifier?
     var selectedClaimID: PersistentIdentifier?
+    var expenseFilter: ExpenseFilter = ExpenseFilter()
 }

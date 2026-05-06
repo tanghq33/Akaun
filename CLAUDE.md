@@ -74,6 +74,10 @@ Processing pipeline per file:
 
 OpenRouter settings (API key, model, max tokens) are stored in `UserDefaults` via `@AppStorage` and configured in `Settings → Auto Import`.
 
+## Design
+
+All UI and UX decisions must follow the [Apple Human Interface Guidelines (HIG)](https://developer.apple.com/design/human-interface-guidelines/). When building or modifying views, prefer native macOS controls and patterns, respect platform conventions (toolbars, sidebars, inspectors, sheets, popovers), and use system-provided spacing, typography, and colors.
+
 ## SDK Quirks
 
 - `.accentColor` is not a `ShapeStyle` in macOS 26.2 — use `Color.accentColor` explicitly
