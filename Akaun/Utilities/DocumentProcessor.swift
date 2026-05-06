@@ -105,7 +105,8 @@ private func buildJsonSchema() -> [String: Any] {
 
 // MARK: - Text Extraction
 
-func extractText(from url: URL) async throws -> String {
+// M9: nonisolated so PDF/image loading and OCR run off the main actor
+nonisolated func extractText(from url: URL) async throws -> String {
     let accessing = url.startAccessingSecurityScopedResource()
     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -121,7 +122,7 @@ func extractText(from url: URL) async throws -> String {
     }
 }
 
-private func extractTextFromPDF(url: URL) async throws -> String {
+private nonisolated func extractTextFromPDF(url: URL) async throws -> String {
     guard let doc = PDFDocument(url: url) else {
         throw NSError(domain: "DocumentProcessor", code: 2,
             userInfo: [NSLocalizedDescriptionKey: "Failed to open PDF: \(url.lastPathComponent)"])
@@ -149,7 +150,7 @@ private func extractTextFromPDF(url: URL) async throws -> String {
     return pageTexts.joined(separator: "\n")
 }
 
-private func ocrPDFPage(_ page: PDFPage) async throws -> String {
+private nonisolated func ocrPDFPage(_ page: PDFPage) async throws -> String {
     let scale = 300.0 / 72.0
     let bounds = page.bounds(for: .mediaBox)
     let pixelSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
@@ -167,7 +168,7 @@ private func ocrPDFPage(_ page: PDFPage) async throws -> String {
     }
 }
 
-private func extractTextFromImage(url: URL) async throws -> String {
+private nonisolated func extractTextFromImage(url: URL) async throws -> String {
     guard let nsImage = NSImage(contentsOf: url),
           let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
         throw NSError(domain: "DocumentProcessor", code: 4,
@@ -176,7 +177,7 @@ private func extractTextFromImage(url: URL) async throws -> String {
     return try await recognizeText(in: cgImage)
 }
 
-private func recognizeText(in cgImage: CGImage) async throws -> String {
+private nonisolated func recognizeText(in cgImage: CGImage) async throws -> String {
     try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
             performOCR(on: cgImage, continuation: continuation)
@@ -419,70 +420,106 @@ func processDocuments(
 
 // MARK: - Search Data Extraction
 
+// M5: @MainActor explicit — SwiftData mutations require the main actor
+@MainActor
 func extractAndStoreSearchText(for expense: Expense, in context: ModelContext) async {
     guard !expense.attachments.isEmpty else { return }
+    // C3: snapshot filenames before any await so relationship reads don't span suspension points
+    let filenames = expense.attachments.map(\.filename)
     var texts: [String] = []
-    for attachment in expense.attachments {
-        let url = DocumentStore.url(for: attachment.filename)
-        if let text = try? await extractText(from: url),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            texts.append(text)
+    for filename in filenames {
+        let url = DocumentStore.url(for: filename)
+        do {
+            let text = try await extractText(from: url)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { texts.append(trimmed) }
+        } catch {
+            print("[Search] OCR failed for \(filename): \(error.localizedDescription)")  // M10
         }
     }
     let combined = texts.joined(separator: "\n\n")
     guard !combined.isEmpty else { return }
+    // C5: guard against use-after-delete
+    guard expense.modelContext != nil else { return }
     if let existing = expense.searchData {
+        guard existing.text != combined else { return }  // L9: skip spurious save
         existing.text = combined
     } else {
         let sd = ExpenseSearchData(text: combined)
         sd.expense = expense
         context.insert(sd)
     }
-    try? context.save()
+    do {
+        try context.save()
+    } catch {
+        print("[Search] Save failed for expense \(expense.expenseNumber): \(error.localizedDescription)")  // M1
+    }
 }
 
+@MainActor
 func extractAndStoreSearchText(for income: Income, in context: ModelContext) async {
     guard !income.attachments.isEmpty else { return }
+    let filenames = income.attachments.map(\.filename)
     var texts: [String] = []
-    for attachment in income.attachments {
-        let url = DocumentStore.url(for: attachment.filename)
-        if let text = try? await extractText(from: url),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            texts.append(text)
+    for filename in filenames {
+        let url = DocumentStore.url(for: filename)
+        do {
+            let text = try await extractText(from: url)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { texts.append(trimmed) }
+        } catch {
+            print("[Search] OCR failed for \(filename): \(error.localizedDescription)")
         }
     }
     let combined = texts.joined(separator: "\n\n")
     guard !combined.isEmpty else { return }
+    guard income.modelContext != nil else { return }
     if let existing = income.searchData {
+        guard existing.text != combined else { return }
         existing.text = combined
     } else {
         let sd = IncomeSearchData(text: combined)
         sd.income = income
         context.insert(sd)
     }
-    try? context.save()
+    do {
+        try context.save()
+    } catch {
+        print("[Search] Save failed for income \(income.incomeNumber): \(error.localizedDescription)")
+    }
 }
 
+@MainActor
 func extractAndStoreSearchText(for claim: Claim, in context: ModelContext) async {
     guard !claim.claimAttachments.isEmpty else { return }
+    let filenames = claim.claimAttachments.map(\.filename)
     var texts: [String] = []
-    for attachment in claim.claimAttachments {
-        let url = DocumentStore.url(for: attachment.filename)
-        if let text = try? await extractText(from: url),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            texts.append(text)
+    for filename in filenames {
+        let url = DocumentStore.url(for: filename)
+        do {
+            let text = try await extractText(from: url)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { texts.append(trimmed) }
+        } catch {
+            print("[Search] OCR failed for \(filename): \(error.localizedDescription)")
         }
     }
     let combined = texts.joined(separator: "\n\n")
     guard !combined.isEmpty else { return }
+    guard claim.modelContext != nil else { return }
     if let existing = claim.searchData {
+        guard existing.text != combined else { return }
         existing.text = combined
     } else {
         let sd = ClaimSearchData(text: combined)
         sd.claim = claim
         context.insert(sd)
     }
-    try? context.save()
+    do {
+        try context.save()
+    } catch {
+        print("[Search] Save failed for claim \(claim.claimNumber): \(error.localizedDescription)")
+    }
 }
 
 // MARK: - Single-File Processing (for queue-based import)

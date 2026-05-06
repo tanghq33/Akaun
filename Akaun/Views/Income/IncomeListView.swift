@@ -47,16 +47,15 @@ struct IncomeListView: View {
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search income")
         .onChange(of: searchText) { _, new in
             debounceTask?.cancel()
+            // H5: cleaner debounce — cancellation throws, assignment skipped
             debounceTask = Task {
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                if !Task.isCancelled { debouncedQuery = new }
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                debouncedQuery = new
             }
         }
+        // H4: extracted to match ExpenseListView pattern
         .onChange(of: debouncedQuery) { _, _ in
-            if let selectedID = nav.selectedIncomeID,
-               !filteredIncomes.contains(where: { $0.persistentModelID == selectedID }) {
-                nav.selectedIncomeID = nil
-            }
+            clearSelectionIfNeeded()
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -81,6 +80,14 @@ struct IncomeListView: View {
         }
     }
 
+    // H4: extracted helper (was inlined)
+    private func clearSelectionIfNeeded() {
+        if let selectedID = nav.selectedIncomeID,
+           !filteredIncomes.contains(where: { $0.persistentModelID == selectedID }) {
+            nav.selectedIncomeID = nil
+        }
+    }
+
     private func deleteIncome(_ income: Income) {
         if nav.selectedIncomeID == income.persistentModelID {
             nav.selectedIncomeID = nil
@@ -90,6 +97,6 @@ struct IncomeListView: View {
         }
         modelContext.delete(income)
         try? modelContext.save()
-        deleteTarget = nil
+        // L6: removed redundant `deleteTarget = nil` — the binding's `set` already clears it
     }
 }

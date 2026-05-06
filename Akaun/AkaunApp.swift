@@ -135,6 +135,8 @@ struct AkaunApp: App {
         guard let expenses = try? context.fetch(FetchDescriptor<Expense>()) else { return }
         let needsMigration = expenses.filter { $0.searchData == nil && !$0.attachments.isEmpty }
         for expense in needsMigration {
+            // C5: skip if deleted before this task ran
+            guard expense.modelContext != nil else { continue }
             await extractAndStoreSearchText(for: expense, in: context)
         }
     }
@@ -144,6 +146,7 @@ struct AkaunApp: App {
         guard let incomes = try? context.fetch(FetchDescriptor<Income>()) else { return }
         let needsMigration = incomes.filter { $0.searchData == nil && !$0.attachments.isEmpty }
         for income in needsMigration {
+            guard income.modelContext != nil else { continue }
             await extractAndStoreSearchText(for: income, in: context)
         }
     }
@@ -153,6 +156,7 @@ struct AkaunApp: App {
         guard let claims = try? context.fetch(FetchDescriptor<Claim>()) else { return }
         let needsMigration = claims.filter { $0.searchData == nil && !$0.claimAttachments.isEmpty }
         for claim in needsMigration {
+            guard claim.modelContext != nil else { continue }
             await extractAndStoreSearchText(for: claim, in: context)
         }
     }

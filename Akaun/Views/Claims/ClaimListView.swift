@@ -34,16 +34,15 @@ struct ClaimListView: View {
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search claims")
         .onChange(of: searchText) { _, new in
             debounceTask?.cancel()
+            // H5: cleaner debounce — cancellation throws, assignment skipped
             debounceTask = Task {
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                if !Task.isCancelled { debouncedQuery = new }
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                debouncedQuery = new
             }
         }
+        // H4: extracted to match ExpenseListView pattern
         .onChange(of: debouncedQuery) { _, _ in
-            if let selectedID = nav.selectedClaimID,
-               !filteredClaims.contains(where: { $0.persistentModelID == selectedID }) {
-                nav.selectedClaimID = nil
-            }
+            clearSelectionIfNeeded()
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -54,6 +53,14 @@ struct ClaimListView: View {
         }
         .sheet(isPresented: $showingForm) {
             ClaimFormView()
+        }
+    }
+
+    // H4: extracted helper (was inlined)
+    private func clearSelectionIfNeeded() {
+        if let selectedID = nav.selectedClaimID,
+           !filteredClaims.contains(where: { $0.persistentModelID == selectedID }) {
+            nav.selectedClaimID = nil
         }
     }
 }
