@@ -21,6 +21,7 @@ struct ExpenseFormView: View {
     @State private var remark = ""
 
     @State private var category = "Other"
+    @State private var status: ExpenseStatus = .unpaid
 
     @State private var attachments: [AttachmentItem] = []
     @State private var existingFilenames: Set<String> = []
@@ -39,7 +40,7 @@ struct ExpenseFormView: View {
     /// True when the expense's status or claim relationship warrants a lock.
     private var needsLock: Bool {
         if case .edit(let expense) = mode {
-            return expense.status == .pending || expense.status == .paid || expense.claim != nil
+            return expense.claim != nil || expense.status == .pending
         }
         return false
     }
@@ -55,7 +56,7 @@ struct ExpenseFormView: View {
             if expense.claim != nil {
                 return "This expense is part of claim \(expense.claim!.claimNumber). Enable God Mode in Settings → Advanced to edit descriptive fields."
             }
-            return "This expense is \(expense.status.rawValue.lowercased()) and cannot be fully edited. Enable God Mode in Settings → Advanced to edit descriptive fields."
+            return "This expense is pending and cannot be fully edited. Enable God Mode in Settings → Advanced to edit descriptive fields."
         }
         return ""
     }
@@ -93,6 +94,13 @@ struct ExpenseFormView: View {
                         .disabled(isLocked)
                     Picker("Category", selection: $category) {
                         ForEach(loadCategories(), id: \.self) { Text($0).tag($0) }
+                    }
+                    if isEdit && !needsLock {
+                        Picker("Status", selection: $status) {
+                            Text("Unpaid").tag(ExpenseStatus.unpaid)
+                            Text("Paid").tag(ExpenseStatus.paid)
+                        }
+                        .pickerStyle(.segmented)
                     }
                 }
 
@@ -141,6 +149,7 @@ struct ExpenseFormView: View {
         reference = expense.reference
         remark = expense.remark
         category = expense.category
+        status = expense.status
 
         if !expense.attachments.isEmpty {
             attachments = expense.attachments.map { AttachmentItem(filename: $0.filename, displayName: $0.displayName) }
@@ -186,6 +195,9 @@ struct ExpenseFormView: View {
 
         case .edit(let expense):
             expense.category = category             // always writable
+            if expense.claim == nil {
+                expense.status = status
+            }
 
             if !isAmountLocked {
                 expense.amountCents = cents
